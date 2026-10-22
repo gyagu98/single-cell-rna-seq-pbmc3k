@@ -8,6 +8,12 @@ def test_defaults_are_explicit_and_parse():
     assert args.min_genes == 200
     assert args.max_mito_pct == 5.0
     assert args.seed == 0
+    assert args.ambiguity_threshold == 0.20
+
+
+def test_custom_ambiguity_threshold_argument_parses():
+    args = build_parser().parse_args(["--ambiguity-threshold", "0.35"])
+    assert args.ambiguity_threshold == 0.35
 
 
 @pytest.mark.parametrize(
@@ -17,6 +23,8 @@ def test_defaults_are_explicit_and_parse():
         {"min_genes": 200, "max_mito_pct": 101, "n_top_genes": 2000, "resolution": 0.5},
         {"min_genes": 200, "max_mito_pct": 5, "n_top_genes": 0, "resolution": 0.5},
         {"min_genes": 200, "max_mito_pct": 5, "n_top_genes": 2000, "resolution": 0},
+        {"min_genes": 200, "max_mito_pct": 5, "n_top_genes": 2000, "resolution": 0.5, "ambiguity_threshold": -0.01},
+        {"min_genes": 200, "max_mito_pct": 5, "n_top_genes": 2000, "resolution": 0.5, "ambiguity_threshold": 1.05},
     ],
 )
 def test_invalid_parameters_are_rejected(kwargs):
@@ -26,6 +34,11 @@ def test_invalid_parameters_are_rejected(kwargs):
 
 def test_valid_parameters_pass():
     validate_parameters(min_genes=200, max_mito_pct=5, n_top_genes=2000, resolution=0.5)
+
+
+@pytest.mark.parametrize("thresh", [0.0, 0.15, 0.50, 1.0])
+def test_valid_parameters_custom_ambiguity_threshold(thresh):
+    validate_parameters(min_genes=200, max_mito_pct=5, n_top_genes=2000, resolution=0.5, ambiguity_threshold=thresh)
 
 
 def test_marker_confidence_high_requires_strong_separated_signature():
@@ -205,5 +218,83 @@ def test_plot_cluster_marker_scores_renders_with_ambiguity_warnings(tmp_path):
     })
     out_file = tmp_path / "marker_dotplot.png"
     plot_cluster_marker_scores(summary, out_file, cluster_summary=cluster_summary)
+    assert out_file.exists()
+    assert out_file.stat().st_size > 1000
+
+
+def test_cluster_annotation_summary_custom_ambiguity_thresholds():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_annotation_summary
+
+    # Cluster 0: 1 of 4 cells ambiguous (25.0%)
+    # Cluster 1: 1 of 10 cells ambiguous (10.0%)
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "0"] + ["1"] * 10,
+        "cell_type": ["B cell", "B cell", "B cell", "Ambiguous"] + ["Monocyte"] * 9 + ["Ambiguous"],
+        "confidence": ["High", "High", "High", "Low"] + ["High"] * 9 + ["Low"],
+    })
+
+    # Default threshold (0.20 / 20%): cluster 0 (25%) -> True, cluster 1 (10%) -> False
+    default_res = cluster_annotation_summary(obs)
+    assert set(default_res[default_res["cluster"] == "0"]["high_ambiguity_warning"]) == {True}
+    assert set(default_res[default_res["cluster"] == "1"]["high_ambiguity_warning"]) == {False}
+
+    # Stricter custom threshold (0.05 / 5%): both clusters trigger warning
+    strict_res = cluster_annotation_summary(obs, ambiguity_threshold=0.05)
+    assert set(strict_res[strict_res["cluster"] == "0"]["high_ambiguity_warning"]) == {True}
+    assert set(strict_res[strict_res["cluster"] == "1"]["high_ambiguity_warning"]) == {True}
+
+    # Lenient custom threshold (0.30 / 30%): neither cluster triggers warning
+    lenient_res = cluster_annotation_summary(obs, ambiguity_threshold=0.30)
+    assert set(lenient_res[lenient_res["cluster"] == "0"]["high_ambiguity_warning"]) == {False}
+    assert set(lenient_res[lenient_res["cluster"] == "1"]["high_ambiguity_warning"]) == {False}
+
+
+def test_cluster_marker_score_summary_respects_custom_ambiguity_threshold():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_marker_score_summary
+
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "0", "1", "1", "1", "1"],
+        "cell_type": ["B cell", "B cell", "B cell", "Ambiguous", "Monocyte", "Monocyte", "Monocyte", "Monocyte"],
+        "confidence": ["High", "High", "High", "Low", "High", "High", "High", "High"],
+        "score_B cell": [0.8, 0.7, 0.6, 0.2, 0.1, 0.1, 0.1, 0.1],
+        "detected_B cell": [3, 2, 2, 1, 0, 0, 0, 0],
+    })
+    # Cluster 0 has 1 of 4 cells ambiguous (25.0%)
+    # With custom threshold 0.30 (30%), warning should be False
+    res_lenient = cluster_marker_score_summary(obs, ambiguity_threshold=0.30)
+    c0_lenient = res_lenient[res_lenient["cluster"] == "0"].iloc[0]
+    assert c0_lenient["high_ambiguity_warning"] is False or c0_lenient["high_ambiguity_warning"] == 0
+
+    # With custom threshold 0.15 (15%), warning should be True
+    res_strict = cluster_marker_score_summary(obs, ambiguity_threshold=0.15)
+    c0_strict = res_strict[res_strict["cluster"] == "0"].iloc[0]
+    assert c0_strict["high_ambiguity_warning"] is True or c0_strict["high_ambiguity_warning"] == 1
+
+
+def test_plot_cluster_marker_scores_renders_with_custom_threshold(tmp_path):
+    import pandas as pd
+    from pbmc3k_workflow.workflow import plot_cluster_marker_scores
+
+    summary = pd.DataFrame({
+        "cluster": ["0", "0", "1", "1"],
+        "cell_type": ["B cell", "Monocyte", "B cell", "Monocyte"],
+        "mean_marker_score": [0.8, 0.1, 0.2, 0.9],
+        "pct_cells_with_2plus_markers": [75.0, 10.0, 20.0, 85.0],
+        "assigned_cell_type": ["B cell", "B cell", "Monocyte", "Monocyte"],
+        "assigned_confidence": ["High", "High", "Low", "Low"],
+    })
+    cluster_summary = pd.DataFrame({
+        "cluster": ["0", "1"],
+        "cluster_cells": [10, 10],
+        "ambiguous_cells": [1, 2],
+        "unassigned_cells": [0, 0],
+        "pct_ambiguous_or_unassigned": [10.0, 20.0],
+        "high_ambiguity_warning": [False, True],
+    })
+    out_file = tmp_path / "marker_dotplot_custom.png"
+    # With a custom threshold of 0.05 (5%), cluster 0 (10%) also triggers warning
+    plot_cluster_marker_scores(summary, out_file, cluster_summary=cluster_summary, ambiguity_threshold=0.05)
     assert out_file.exists()
     assert out_file.stat().st_size > 1000

@@ -9,9 +9,16 @@ import urllib.request
 from pathlib import Path
 
 DATA_URL = "https://cf.10xgenomics.com/samples/cell/pbmc3k/pbmc3k_filtered_gene_bc_matrices.tar.gz"
+DEFAULT_AMBIGUITY_THRESHOLD = 0.20
 
 
-def validate_parameters(min_genes: int, max_mito_pct: float, n_top_genes: int, resolution: float) -> None:
+def validate_parameters(
+    min_genes: int,
+    max_mito_pct: float,
+    n_top_genes: int,
+    resolution: float,
+    ambiguity_threshold: float = DEFAULT_AMBIGUITY_THRESHOLD,
+) -> None:
     if min_genes < 0:
         raise ValueError("min_genes must be non-negative")
     if not 0 <= max_mito_pct <= 100:
@@ -20,6 +27,8 @@ def validate_parameters(min_genes: int, max_mito_pct: float, n_top_genes: int, r
         raise ValueError("n_top_genes must be at least 1")
     if resolution <= 0:
         raise ValueError("resolution must be positive")
+    if not 0.0 <= ambiguity_threshold <= 1.0:
+        raise ValueError("ambiguity_threshold must be between 0.0 and 1.0")
 
 
 def download_data(data_dir: Path) -> Path:
@@ -137,7 +146,7 @@ def score_marker_sets(adata, marker_sets: dict) -> tuple[dict[str, object], list
         })
     return {key: [row[key] for row in annotation_rows] for key in annotation_rows[0]}, audit_rows
 
-def cluster_annotation_summary(obs, ambiguity_threshold: float = 0.20):
+def cluster_annotation_summary(obs, ambiguity_threshold: float = DEFAULT_AMBIGUITY_THRESHOLD):
     """Count cell-type/confidence labels and ambiguity totals within each cluster."""
     import pandas as pd
 
@@ -173,14 +182,14 @@ def cluster_annotation_summary(obs, ambiguity_threshold: float = 0.20):
         * 100
     ).round(1)
     cluster_totals["high_ambiguity_warning"] = (
-        cluster_totals["pct_ambiguous_or_unassigned"] >= ambiguity_threshold * 100
+        cluster_totals["pct_ambiguous_or_unassigned"] >= round(ambiguity_threshold * 100, 2)
     )
     summary = summary.merge(cluster_totals, left_on="cluster", right_index=True, validate="many_to_one")
     summary["cluster"] = summary["cluster"].astype(str)
     return summary
 
 
-def cluster_marker_score_summary(obs, cluster_summary=None, ambiguity_threshold: float = 0.20):
+def cluster_marker_score_summary(obs, cluster_summary=None, ambiguity_threshold: float = DEFAULT_AMBIGUITY_THRESHOLD):
     """Summarize mean marker scores and marker detection by cluster and set."""
     import pandas as pd
 
@@ -228,8 +237,12 @@ def cluster_marker_score_summary(obs, cluster_summary=None, ambiguity_threshold:
         ambig_cols = ["cluster", "ambiguous_cells", "unassigned_cells", "pct_ambiguous_or_unassigned", "high_ambiguity_warning"]
         available_cols = [c for c in ambig_cols if c in cluster_summary.columns]
         if len(available_cols) > 1:
-            totals = cluster_summary[available_cols].drop_duplicates("cluster")
+            totals = cluster_summary[available_cols].drop_duplicates("cluster").copy()
             totals["cluster"] = totals["cluster"].astype(str)
+            if "pct_ambiguous_or_unassigned" in totals.columns:
+                totals["high_ambiguity_warning"] = (
+                    totals["pct_ambiguous_or_unassigned"] >= round(ambiguity_threshold * 100, 2)
+                )
             score_summary = score_summary.merge(totals, on="cluster", how="left", validate="many_to_one")
     elif {"cell_type", "confidence"}.issubset(obs.columns):
         summary_data = cluster_annotation_summary(obs, ambiguity_threshold=ambiguity_threshold)
@@ -241,7 +254,7 @@ def cluster_marker_score_summary(obs, cluster_summary=None, ambiguity_threshold:
     return score_summary
 
 
-def plot_cluster_marker_scores(summary, output_path: Path, cluster_summary=None, ambiguity_threshold: float = 0.20) -> None:
+def plot_cluster_marker_scores(summary, output_path: Path, cluster_summary=None, ambiguity_threshold: float = DEFAULT_AMBIGUITY_THRESHOLD) -> None:
     """Draw a dot plot with visual ambiguity warnings: color is mean score; size is fraction with >=2 markers."""
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
@@ -272,20 +285,21 @@ def plot_cluster_marker_scores(summary, output_path: Path, cluster_summary=None,
             subset = source_df[source_df["cluster"] == c]
             if not subset.empty:
                 row = subset.iloc[0]
-                if "high_ambiguity_warning" in row:
+                if "pct_ambiguous_or_unassigned" in row:
+                    pct = float(row["pct_ambiguous_or_unassigned"])
+                    is_warn = pct >= (round(ambiguity_threshold * 100, 2) - 1e-6)
+                elif "high_ambiguity_warning" in row:
                     is_warn = bool(row["high_ambiguity_warning"])
-                elif "pct_ambiguous_or_unassigned" in row:
-                    is_warn = float(row["pct_ambiguous_or_unassigned"]) >= (ambiguity_threshold * 100)
+                    pct = round(ambiguity_threshold * 100, 1) if is_warn else 0.0
                 elif "ambiguous_cells" in row and "cluster_cells" in row:
                     total_ambig = float(row["ambiguous_cells"]) + float(row.get("unassigned_cells", 0))
-                    is_warn = (total_ambig / float(row["cluster_cells"])) >= ambiguity_threshold
+                    total_cells = float(row["cluster_cells"])
+                    pct = round(total_ambig / total_cells * 100, 1) if total_cells > 0 else 0.0
+                    is_warn = (total_ambig / total_cells) >= ambiguity_threshold if total_cells > 0 else False
                 else:
                     is_warn = False
+                    pct = 0.0
 
-                pct = float(row["pct_ambiguous_or_unassigned"]) if "pct_ambiguous_or_unassigned" in row else (
-                    round((float(row.get("ambiguous_cells", 0)) + float(row.get("unassigned_cells", 0))) / float(row["cluster_cells"]) * 100, 1)
-                    if "cluster_cells" in row and float(row["cluster_cells"]) > 0 else 0.0
-                )
                 ambig_cnt = int(row.get("ambiguous_cells", 0)) + int(row.get("unassigned_cells", 0))
                 ambiguity_data[c] = {"warning": is_warn, "pct": pct, "count": ambig_cnt}
 
@@ -360,12 +374,13 @@ def plot_cluster_marker_scores(summary, output_path: Path, cluster_summary=None,
         legend_labels.append(f"{fraction}%")
 
     if any_warning:
+        thresh_str = f"{ambiguity_threshold * 100:g}%"
         h_warn = Patch(
             facecolor="#fef3c7", edgecolor="#f59e0b", linestyle="--",
-            label=f"High ambiguity (≥{int(ambiguity_threshold*100)}%)"
+            label=f"High ambiguity (≥{thresh_str})"
         )
         handles.append(h_warn)
-        legend_labels.append(f"High ambiguity (≥{int(ambiguity_threshold*100)}%)")
+        legend_labels.append(f"High ambiguity (≥{thresh_str})")
 
     ax.legend(
         handles, legend_labels,
@@ -382,7 +397,14 @@ def run(args: argparse.Namespace) -> None:
     import matplotlib.pyplot as plt
     import scanpy as sc
 
-    validate_parameters(args.min_genes, args.max_mito_pct, args.n_top_genes, args.resolution)
+    ambiguity_threshold = getattr(args, "ambiguity_threshold", DEFAULT_AMBIGUITY_THRESHOLD)
+    validate_parameters(
+        args.min_genes,
+        args.max_mito_pct,
+        args.n_top_genes,
+        args.resolution,
+        ambiguity_threshold=ambiguity_threshold,
+    )
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     matrix_dir = Path(args.input_dir) if args.input_dir else download_data(Path(args.data_dir))
@@ -432,11 +454,11 @@ def run(args: argparse.Namespace) -> None:
     annotation_table = adata.obs[annotation_columns].copy()
     annotation_table.insert(0, "barcode", annotation_table.index.astype(str))
     annotation_table.to_csv(out / "cell_annotations.csv", index=False)
-    cluster_annotation = cluster_annotation_summary(adata.obs)
+    cluster_annotation = cluster_annotation_summary(adata.obs, ambiguity_threshold=ambiguity_threshold)
     cluster_annotation.to_csv(out / "cluster_celltype_summary.csv", index=False)
-    marker_score_summary = cluster_marker_score_summary(adata.obs, cluster_summary=cluster_annotation)
+    marker_score_summary = cluster_marker_score_summary(adata.obs, cluster_summary=cluster_annotation, ambiguity_threshold=ambiguity_threshold)
     marker_score_summary.to_csv(out / "cluster_marker_scores.csv", index=False)
-    plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png", cluster_summary=cluster_annotation)
+    plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png", cluster_summary=cluster_annotation, ambiguity_threshold=ambiguity_threshold)
 
     sc.settings.figdir = out
     sc.pl.umap(adata, color=["leiden", "cell_type", "confidence"], show=False, save="_annotation.png")
@@ -470,7 +492,7 @@ def run(args: argparse.Namespace) -> None:
         "annotation_score_method": marker_sets["score_method"],
         "annotation_confidence_thresholds": {"high_score": HIGH_SCORE, "high_margin": HIGH_MARGIN, "moderate_score": MODERATE_SCORE, "moderate_margin": MODERATE_MARGIN, "minimum_detected_markers": MIN_MARKERS_DETECTED},
         "marker_set_source": marker_sets["source_url"],
-        "parameters": {"min_genes": args.min_genes, "max_mito_pct": args.max_mito_pct, "n_top_genes": args.n_top_genes, "resolution": args.resolution, "seed": args.seed},
+        "parameters": {"min_genes": args.min_genes, "max_mito_pct": args.max_mito_pct, "n_top_genes": args.n_top_genes, "resolution": args.resolution, "seed": args.seed, "ambiguity_threshold": ambiguity_threshold},
         "interpretation_note": "One healthy donor; clusters and marker genes are exploratory and are not independent biological replicates.",
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
@@ -482,7 +504,8 @@ def run(args: argparse.Namespace) -> None:
         f"- High-confidence heuristic labels: {(adata.obs['confidence'] == 'High').sum()} cells\n"
         f"- Moderate-confidence heuristic labels: {(adata.obs['confidence'] == 'Moderate').sum()} cells\n"
         f"- Low-confidence or ambiguous labels: {adata.obs['confidence'].isin(['Low']).sum()} cells\n"
-        f"- Unassigned cells: {(adata.obs['confidence'] == 'Unassigned').sum()}\n\n"
+        f"- Unassigned cells: {(adata.obs['confidence'] == 'Unassigned').sum()}\n"
+        f"- Ambiguity warning threshold: {ambiguity_threshold * 100:g}%\n\n"
         f"Marker sets and citations: {marker_sets['source_url']}\n\n"
         "Confidence labels are transparent heuristics based on marker score, separation from the runner-up, and detected markers; they are not probabilities and have not been calibrated against an independent validation set. This is a single healthy donor dataset. Cell types and markers are exploratory and do not support donor-level differential expression or batch-integration claims.\n"
     )
@@ -499,6 +522,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-top-genes", type=int, default=2000)
     parser.add_argument("--resolution", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--ambiguity-threshold",
+        type=float,
+        default=DEFAULT_AMBIGUITY_THRESHOLD,
+        help="Fraction (0.0 to 1.0) of ambiguous or unassigned cells to trigger a cluster ambiguity warning (default: 0.20)",
+    )
     return parser
 
 
