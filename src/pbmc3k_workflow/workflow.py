@@ -133,8 +133,75 @@ def score_marker_sets(adata, marker_sets: dict) -> tuple[dict[str, object], list
             "top_scoring_cell_type": result["top_scoring_cell_type"],
             "top_marker_genes_detected": detected.get(result["top_scoring_cell_type"], 0),
             **{f"score_{name}": float(values[i]) for name, values in scores_by_type.items()},
+            **{f"detected_{name}": int(values[i]) for name, values in detected_by_type.items()},
         })
     return {key: [row[key] for row in annotation_rows] for key in annotation_rows[0]}, audit_rows
+
+def cluster_marker_score_summary(obs):
+    """Summarize mean marker scores and marker detection by cluster and set."""
+    import pandas as pd
+
+    if "leiden" not in obs.columns:
+        raise ValueError("obs must contain Leiden cluster labels in 'leiden'")
+    score_columns = [column for column in obs.columns if str(column).startswith("score_")]
+    if not score_columns:
+        raise ValueError("obs must contain per-cell marker score columns")
+
+    rows = []
+    for cluster, group in obs.groupby("leiden", observed=True, sort=False):
+        for score_column in score_columns:
+            cell_type = str(score_column)[len("score_"):]
+            detected_column = f"detected_{cell_type}"
+            if detected_column not in group.columns:
+                raise ValueError(f"Missing per-cell marker evidence column: {detected_column}")
+            values = group[score_column].astype(float)
+            detected = group[detected_column].astype(int)
+            rows.append({
+                "cluster": str(cluster),
+                "cell_type": cell_type,
+                "mean_marker_score": float(values.mean()),
+                "pct_cells_with_2plus_markers": float((detected >= MIN_MARKERS_DETECTED).mean() * 100),
+                "cells_in_cluster": int(len(group)),
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_cluster_marker_scores(summary, output_path: Path) -> None:
+    """Draw a dot plot: color is mean score; size is fraction with >=2 markers."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    clusters = list(dict.fromkeys(summary["cluster"].astype(str)))
+    cell_types = list(dict.fromkeys(summary["cell_type"].astype(str)))
+    x_lookup = {name: index for index, name in enumerate(cell_types)}
+    y_lookup = {name: index for index, name in enumerate(clusters)}
+    x = summary["cell_type"].astype(str).map(x_lookup).to_numpy()
+    y = summary["cluster"].astype(str).map(y_lookup).to_numpy()
+    scores = summary["mean_marker_score"].astype(float).to_numpy()
+    fractions = summary["pct_cells_with_2plus_markers"].astype(float).to_numpy()
+
+    fig_width = max(8, len(cell_types) * 1.25)
+    fig_height = max(4, len(clusters) * 0.55 + 1.5)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    scatter = ax.scatter(
+        x, y, c=scores, s=20 + fractions * 2.2, cmap="viridis",
+        edgecolors="#333333", linewidths=0.35, alpha=0.9,
+    )
+    ax.set_xticks(range(len(cell_types)), cell_types, rotation=35, ha="right")
+    ax.set_yticks(range(len(clusters)), clusters)
+    ax.set_xlabel("Marker set / candidate cell type")
+    ax.set_ylabel("Leiden cluster")
+    ax.set_title("Per-cluster marker-score evidence")
+    ax.grid(axis="both", color="#dddddd", linewidth=0.5, zorder=0)
+    colorbar = fig.colorbar(scatter, ax=ax, pad=0.02)
+    colorbar.set_label("Mean log1p-normalized marker score")
+    for fraction in (25, 50, 75):
+        ax.scatter([], [], s=20 + fraction * 2.2, color="#aaaaaa", edgecolors="#333333", label=f"{fraction}%")
+    ax.legend(title="Cells with ≥2 markers", bbox_to_anchor=(1.18, 1), loc="upper left", frameon=False)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
 
 def run(args: argparse.Namespace) -> None:
     # Heavy dependencies are imported only when executing the full analysis.
@@ -186,9 +253,14 @@ def run(args: argparse.Namespace) -> None:
         writer = csv.DictWriter(handle, fieldnames=marker_audit[0].keys())
         writer.writeheader()
         writer.writerows(marker_audit)
-    annotation_table = adata.obs[["cell_type", "confidence", "top_scoring_cell_type", "top_marker_score", "runner_up_cell_type", "score_margin", "top_marker_genes_detected"]].copy()
+    annotation_columns = ["cell_type", "confidence", "top_scoring_cell_type", "top_marker_score", "runner_up_cell_type", "score_margin", "top_marker_genes_detected"]
+    annotation_columns.extend(column for column in adata.obs.columns if str(column).startswith("score_"))
+    annotation_table = adata.obs[annotation_columns].copy()
     annotation_table.insert(0, "barcode", annotation_table.index.astype(str))
     annotation_table.to_csv(out / "cell_annotations.csv", index=False)
+    marker_score_summary = cluster_marker_score_summary(adata.obs)
+    marker_score_summary.to_csv(out / "cluster_marker_scores.csv", index=False)
+    plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png")
     cluster_annotation = adata.obs.groupby(["leiden", "cell_type", "confidence"], observed=True).size().rename("cells").reset_index()
     cluster_annotation.to_csv(out / "cluster_celltype_summary.csv", index=False)
 
