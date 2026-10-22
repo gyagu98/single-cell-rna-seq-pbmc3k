@@ -15,7 +15,8 @@ The analysis uses Scanpy's AnnData-based single-cell workflow and follows standa
 ```text
 10x filtered matrix → QC metrics and filtering → library-size normalization + log1p
                     → highly variable genes → scaling + PCA → neighbors + UMAP
-                    → Leiden clusters + Wilcoxon marker ranking → tables and figures
+                    → Leiden clusters + marker ranking → heuristic marker-based cell labels
+                    → confidence audit, cited marker sets, tables and figures
 ```
 
 ## Install and run
@@ -57,15 +58,25 @@ pbmc3k --input-dir path/to/filtered_gene_bc_matrices/hg19 --output-dir results
 - `umap_overview.png`: UMAP colored by cluster, detected genes, and mitochondrial percentage.
 - `cluster_markers.csv`: ranked marker statistics by cluster.
 - `cluster_cell_counts.csv`: number of cells assigned to each cluster.
-- `summary.json` and `analysis_summary.md`: run parameters, dimensions, and interpretation caveats.
+- `cell_annotations.csv`: per-cell broad cell-type annotation, confidence label, top-scoring candidate, top score, runner-up, score margin, and marker detection count.
+- `cluster_celltype_summary.csv`: counts by Leiden cluster, heuristic cell type, and confidence label.
+- `marker_sets.csv`: marker genes, genes present in the dataset, and citation URL for each marker set.
+- `umap_annotation.png`: UMAP colored by cluster, heuristic annotation, and confidence.
+- `summary.json` and `analysis_summary.md`: run parameters, dimensions, confidence counts, and interpretation caveats.
 
 Run artifacts and downloaded data are excluded from version control. The script uses a fixed random seed by default, and records run parameters in the summary.
+
+## Marker-based cell-type annotation
+
+After clustering, the workflow scores seven broad PBMC marker sets: monocytes, CD4 T cells, CD8 T cells, natural killer cells, B cells, other T cells, and dendritic cells. The marker lists are taken from the Azimuth Human PBMC reference at the broad `celltype.l1` level: monocytes [CTSS, FCN1, LYZ, S100A9, TYROBP, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), CD4 T cells [IL7R, CD4, TRAC, CD3D, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), CD8 T cells [CD8A, CD8B, CD3D, CTSW, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), NK cells [NKG7, KLRD1, GNLY, PRF1, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), B cells [CD79A, MS4A1, CD74, IGHM, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), other T cells [TRDC, GZMK, KLRB1, TRGC2, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/), and dendritic cells [CD74, HLA-DRA, HLA-DPA1, CST3, etc.](https://azimuth.hubmapconsortium.org/references/human_pbmc/). These published reference marker signatures are a starting point for interpretation, not a standalone validation of identities. [Azimuth Human PBMC marker reference](https://azimuth.hubmapconsortium.org/references/human_pbmc/) · [Hao et al., Cell 2021](https://doi.org/10.1016/j.cell.2021.04.048)
+
+For each cell, the workflow calculates the mean log1p-normalized expression across available genes in each set, ranks the scores, and records the top label, runner-up, score margin, and number of detected top-set markers. The `High`, `Moderate`, `Low`, `Ambiguous`, and `Unassigned` labels are heuristic quality flags based on documented score, margin, and marker-detection thresholds in `summary.json`; they are **not probabilities**, calibrated confidence, or an automated reference-mapping result. `marker_sets.csv` records the exact genes and citation for each set, and `cell_annotations.csv` retains the per-cell evidence so labels can be reviewed. Treat broad labels as tentative, especially where related lymphocyte signatures overlap.
 
 ## Reproducibility and interpretation
 
 The unit tests check parameter validation and command-line defaults without downloading data or running the full analysis. GitHub Actions runs these tests on pushes and pull requests. A complete analysis requires the Scanpy stack and network access for the initial dataset download.
 
-QC thresholds and clustering resolution affect the resulting cells and clusters; inspect the QC figure and test sensitivity to reasonable parameter changes. Marker ranking is exploratory, especially because cells from this single donor are not independent biological replicates. Do not interpret cell counts as population prevalence or present cluster markers as validated biomarkers.
+QC thresholds and clustering resolution affect the resulting cells and clusters; inspect the QC figure and test sensitivity to reasonable parameter changes. Marker ranking and marker-based cell labels are exploratory, especially because cells from this single donor are not independent biological replicates. The heuristic scores are not probabilities and are not validated against independent labels. Do not interpret cell counts as population prevalence or present cluster markers as validated biomarkers.
 
 ## License and data
 

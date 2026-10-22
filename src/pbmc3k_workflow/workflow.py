@@ -55,6 +55,87 @@ def download_data(data_dir: Path) -> Path:
     return matrix_dir
 
 
+
+HIGH_SCORE = 0.5
+HIGH_MARGIN = 0.25
+MODERATE_SCORE = 0.2
+MODERATE_MARGIN = 0.1
+MIN_MARKERS_DETECTED = 2
+
+
+def classify_marker_scores(scores: dict[str, float], detected: dict[str, int]) -> dict[str, object]:
+    """Assign a heuristic label; scores are mean log1p-normalized marker expression, not probabilities."""
+    if not scores:
+        return {"cell_type": "Unassigned", "confidence": "Unassigned", "top_score": 0.0, "runner_up": "", "margin": 0.0}
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    label, top = ranked[0]
+    runner, second = ranked[1] if len(ranked) > 1 else ("", 0.0)
+    margin = top - second
+    n_detected = detected.get(label, 0)
+    if top < 0.1 or n_detected < MIN_MARKERS_DETECTED:
+        cell_type, confidence = "Unassigned", "Unassigned"
+    elif margin < 0.1:
+        cell_type, confidence = "Ambiguous", "Low"
+    elif top >= HIGH_SCORE and margin >= HIGH_MARGIN and n_detected >= 3:
+        cell_type, confidence = label, "High"
+    elif top >= MODERATE_SCORE and margin >= MODERATE_MARGIN and n_detected >= MIN_MARKERS_DETECTED:
+        cell_type, confidence = label, "Moderate"
+    else:
+        cell_type, confidence = label, "Low"
+    return {"cell_type": cell_type, "confidence": confidence, "top_scoring_cell_type": label, "top_score": float(top), "runner_up": runner, "margin": float(margin)}
+
+
+def marker_set_definitions() -> dict:
+    """Load the documented marker gene sets shipped with this package."""
+    path = Path(__file__).with_name("marker_sets.json")
+    return json.loads(path.read_text())
+
+
+def score_marker_sets(adata, marker_sets: dict) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Score marker sets in adata.raw and return cell annotations and gene-set audit rows."""
+    import numpy as np
+
+    raw = adata.raw
+    gene_lookup = {str(name).upper(): i for i, name in enumerate(raw.var_names)}
+    scores_by_type: dict[str, np.ndarray] = {}
+    detected_by_type: dict[str, np.ndarray] = {}
+    audit_rows: list[dict[str, object]] = []
+    for cell_type, requested_genes in marker_sets["cell_types"].items():
+        present = [gene for gene in requested_genes if gene.upper() in gene_lookup]
+        indices = [gene_lookup[gene.upper()] for gene in present]
+        if indices:
+            matrix = raw.X[:, indices]
+            scores_by_type[cell_type] = np.asarray(matrix.mean(axis=1)).ravel()
+            detected_by_type[cell_type] = np.asarray((matrix > 0).sum(axis=1)).ravel()
+        else:
+            scores_by_type[cell_type] = np.zeros(adata.n_obs, dtype=float)
+            detected_by_type[cell_type] = np.zeros(adata.n_obs, dtype=int)
+        audit_rows.append({
+            "cell_type": cell_type,
+            "marker_genes": ";".join(requested_genes),
+            "genes_present_in_dataset": ";".join(present),
+            "genes_present_count": len(present),
+            "source": marker_sets["source"],
+            "source_url": marker_sets["source_url"],
+        })
+    annotation_rows = []
+    for i in range(adata.n_obs):
+        scores = {name: float(values[i]) for name, values in scores_by_type.items()}
+        detected = {name: int(values[i]) for name, values in detected_by_type.items()}
+        result = classify_marker_scores(scores, detected)
+        label = result["cell_type"]
+        annotation_rows.append({
+            "cell_type": label,
+            "confidence": result["confidence"],
+            "top_marker_score": result["top_score"],
+            "runner_up_cell_type": result["runner_up"],
+            "score_margin": result["margin"],
+            "top_scoring_cell_type": result["top_scoring_cell_type"],
+            "top_marker_genes_detected": detected.get(result["top_scoring_cell_type"], 0),
+            **{f"score_{name}": float(values[i]) for name, values in scores_by_type.items()},
+        })
+    return {key: [row[key] for row in annotation_rows] for key in annotation_rows[0]}, audit_rows
+
 def run(args: argparse.Namespace) -> None:
     # Heavy dependencies are imported only when executing the full analysis.
     import matplotlib.pyplot as plt
@@ -97,8 +178,27 @@ def run(args: argparse.Namespace) -> None:
     sc.tl.umap(adata, random_state=args.seed)
     sc.tl.leiden(adata, resolution=args.resolution, random_state=args.seed, key_added="leiden", flavor="igraph", n_iterations=2, directed=False)
     sc.tl.rank_genes_groups(adata, "leiden", method="wilcoxon", use_raw=True)
+    marker_sets = marker_set_definitions()
+    annotations, marker_audit = score_marker_sets(adata, marker_sets)
+    for column, values in annotations.items():
+        adata.obs[column] = values
+    with (out / "marker_sets.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=marker_audit[0].keys())
+        writer.writeheader()
+        writer.writerows(marker_audit)
+    annotation_table = adata.obs[["cell_type", "confidence", "top_scoring_cell_type", "top_marker_score", "runner_up_cell_type", "score_margin", "top_marker_genes_detected"]].copy()
+    annotation_table.insert(0, "barcode", annotation_table.index.astype(str))
+    annotation_table.to_csv(out / "cell_annotations.csv", index=False)
+    cluster_annotation = adata.obs.groupby(["leiden", "cell_type", "confidence"], observed=True).size().rename("cells").reset_index()
+    cluster_annotation.to_csv(out / "cluster_celltype_summary.csv", index=False)
 
     sc.settings.figdir = out
+    sc.pl.umap(adata, color=["leiden", "cell_type", "confidence"], show=False, save="_annotation.png")
+    annotation_figure = out / "umap_annotation.png"
+    if not annotation_figure.exists():
+        candidates = list(out.glob("umap_annotation*"))
+        if candidates:
+            candidates[0].replace(annotation_figure)
     sc.pl.umap(adata, color=["leiden", "n_genes_by_counts", "pct_counts_mt"], show=False, save="_overview.png")
     generated_figure = out / "umap_overview.png"
     if not generated_figure.exists():
@@ -120,6 +220,10 @@ def run(args: argparse.Namespace) -> None:
         "cells_after_qc": int(adata.n_obs),
         "genes_after_qc_and_hvg": int(adata.n_vars),
         "clusters": int(adata.obs["leiden"].nunique()),
+        "annotation_confidence_counts": {str(key): int(value) for key, value in adata.obs["confidence"].value_counts().items()},
+        "annotation_score_method": marker_sets["score_method"],
+        "annotation_confidence_thresholds": {"high_score": HIGH_SCORE, "high_margin": HIGH_MARGIN, "moderate_score": MODERATE_SCORE, "moderate_margin": MODERATE_MARGIN, "minimum_detected_markers": MIN_MARKERS_DETECTED},
+        "marker_set_source": marker_sets["source_url"],
         "parameters": {"min_genes": args.min_genes, "max_mito_pct": args.max_mito_pct, "n_top_genes": args.n_top_genes, "resolution": args.resolution, "seed": args.seed},
         "interpretation_note": "One healthy donor; clusters and marker genes are exploratory and are not independent biological replicates.",
     }
@@ -128,8 +232,13 @@ def run(args: argparse.Namespace) -> None:
         "# Analysis summary\n\n"
         f"- Cells retained after QC: {adata.n_obs}\n"
         f"- Highly variable genes used: {adata.n_vars}\n"
-        f"- Leiden clusters: {adata.obs['leiden'].nunique()}\n\n"
-        "This is a single healthy donor dataset. Clusters and marker genes are exploratory; this dataset does not support donor-level differential expression or batch-integration claims.\n"
+        f"- Leiden clusters: {adata.obs['leiden'].nunique()}\n"
+        f"- High-confidence heuristic labels: {(adata.obs['confidence'] == 'High').sum()} cells\n"
+        f"- Moderate-confidence heuristic labels: {(adata.obs['confidence'] == 'Moderate').sum()} cells\n"
+        f"- Low-confidence or ambiguous labels: {adata.obs['confidence'].isin(['Low']).sum()} cells\n"
+        f"- Unassigned cells: {(adata.obs['confidence'] == 'Unassigned').sum()}\n\n"
+        f"Marker sets and citations: {marker_sets['source_url']}\n\n"
+        "Confidence labels are transparent heuristics based on marker score, separation from the runner-up, and detected markers; they are not probabilities and have not been calibrated against an independent validation set. This is a single healthy donor dataset. Cell types and markers are exploratory and do not support donor-level differential expression or batch-integration claims.\n"
     )
     print(f"Analysis complete. Results: {out.resolve()}")
 
