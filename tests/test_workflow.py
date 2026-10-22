@@ -113,3 +113,27 @@ def test_cluster_annotation_summary_requires_annotation_columns():
 
     with pytest.raises(ValueError, match="missing required annotation columns"):
         cluster_annotation_summary(pd.DataFrame({"leiden": ["0"]}))
+
+
+def test_cluster_marker_summary_includes_most_common_label_and_confidence():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_marker_score_summary
+
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "1", "1"],
+        "cell_type": ["B cell", "B cell", "Ambiguous", "Monocyte", "Monocyte"],
+        "confidence": ["High", "High", "Low", "Moderate", "High"],
+        "score_B cell": [0.8, 0.6, 0.1, 0.1, 0.2],
+        "detected_B cell": [3, 2, 1, 0, 1],
+        "score_Monocyte": [0.1, 0.2, 0.3, 0.9, 0.8],
+        "detected_Monocyte": [0, 1, 2, 4, 3],
+    })
+    result = cluster_marker_score_summary(obs)
+
+    cluster0 = result[result["cluster"] == "0"]
+    assert set(cluster0["assigned_cell_type"]) == {"B cell"}
+    assert set(cluster0["assigned_confidence"]) == {"High"}
+    cluster1 = result[result["cluster"] == "1"]
+    # The two labels tie by count; stable alphabetical tie-break chooses High.
+    assert set(cluster1["assigned_cell_type"]) == {"Monocyte"}
+    assert set(cluster1["assigned_confidence"]) == {"High"}

@@ -62,8 +62,8 @@ pbmc3k --input-dir path/to/filtered_gene_bc_matrices/hg19 --output-dir results
 - `cluster_celltype_summary.csv`: counts by Leiden cluster, cell type, and confidence label, with cluster size plus explicit ambiguous- and unassigned-cell totals for context.
 - `marker_sets.csv`: marker genes, genes present in the dataset, and citation URL for each marker set.
 - `umap_annotation.png`: UMAP colored by cluster, heuristic annotation, and confidence.
-- `marker_score_dotplot.png`: per-cluster marker-score dot plot; color encodes mean log1p-normalized marker score and dot size encodes the fraction of cells with at least two detected genes in that marker set.
-- `cluster_marker_scores.csv`: the numeric values plotted, including mean marker score, marker-detection fraction, and cluster size.
+- `marker_score_dotplot.png`: per-cluster marker-score dot plot; each row includes the most common assigned cell-type/confidence pair for that cluster. Color encodes mean log1p-normalized marker score and dot size encodes the fraction of cells with at least two detected genes in that marker set.
+- `cluster_marker_scores.csv`: the numeric values plotted, including the cluster’s most common assigned label and confidence, mean marker score, marker-detection fraction, and cluster size. If cells within a cluster have mixed labels, the displayed label is the most frequent cell-type/confidence pair; ties are resolved alphabetically. The complete label/confidence counts remain available in `cluster_celltype_summary.csv`.
 - `summary.json` and `analysis_summary.md`: run parameters, dimensions, confidence counts, and interpretation caveats.
 
 Run artifacts and downloaded data are excluded from version control. The script uses a fixed random seed by default, and records run parameters in the summary.

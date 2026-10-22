@@ -163,7 +163,26 @@ def cluster_marker_score_summary(obs):
                 "pct_cells_with_2plus_markers": float((detected >= MIN_MARKERS_DETECTED).mean() * 100),
                 "cells_in_cluster": int(len(group)),
             })
-    return pd.DataFrame(rows)
+    score_summary = pd.DataFrame(rows)
+    # The production workflow always has annotations. Keep this helper usable
+    # with score-only tables by adding labels only when both fields are present.
+    if {"cell_type", "confidence"}.issubset(obs.columns):
+        # A cluster can contain cells with different per-cell labels. For the
+        # plot, show the most common label/confidence pair; the complete
+        # breakdown remains in cluster_celltype_summary.csv.
+        label_counts = (
+            obs.groupby(["leiden", "cell_type", "confidence"], observed=True, dropna=False)
+            .size()
+            .rename("_label_cells")
+            .reset_index()
+            .sort_values(["leiden", "_label_cells", "cell_type", "confidence"],
+                         ascending=[True, False, True, True], kind="stable")
+            .drop_duplicates("leiden")
+            .rename(columns={"leiden": "cluster", "cell_type": "assigned_cell_type", "confidence": "assigned_confidence"})
+            [["cluster", "assigned_cell_type", "assigned_confidence"]]
+        )
+        score_summary = score_summary.merge(label_counts, on="cluster", how="left", validate="many_to_one")
+    return score_summary
 
 
 def plot_cluster_marker_scores(summary, output_path: Path) -> None:
@@ -180,18 +199,30 @@ def plot_cluster_marker_scores(summary, output_path: Path) -> None:
     scores = summary["mean_marker_score"].astype(float).to_numpy()
     fractions = summary["pct_cells_with_2plus_markers"].astype(float).to_numpy()
 
-    fig_width = max(8, len(cell_types) * 1.25)
-    fig_height = max(4, len(clusters) * 0.55 + 1.5)
+    fig_width = max(9, len(cell_types) * 1.3)
+    fig_height = max(4, len(clusters) * 0.62 + 1.5)
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     scatter = ax.scatter(
         x, y, c=scores, s=20 + fractions * 2.2, cmap="viridis",
         edgecolors="#333333", linewidths=0.35, alpha=0.9,
     )
     ax.set_xticks(range(len(cell_types)), cell_types, rotation=35, ha="right")
-    ax.set_yticks(range(len(clusters)), clusters)
+    if {"assigned_cell_type", "assigned_confidence"}.issubset(summary.columns):
+        cluster_labels = (
+            summary[["cluster", "assigned_cell_type", "assigned_confidence"]]
+            .drop_duplicates("cluster")
+            .set_index("cluster")
+        )
+        ytick_labels = [
+            f"{cluster} · {cluster_labels.loc[cluster, 'assigned_cell_type']} ({cluster_labels.loc[cluster, 'assigned_confidence']})"
+            for cluster in clusters
+        ]
+    else:
+        ytick_labels = clusters
+    ax.set_yticks(range(len(clusters)), ytick_labels)
     ax.set_xlabel("Marker set / candidate cell type")
-    ax.set_ylabel("Leiden cluster")
-    ax.set_title("Per-cluster marker-score evidence")
+    ax.set_ylabel("Leiden cluster · assigned cell type (confidence)")
+    ax.set_title("Per-cluster marker-score evidence and annotations")
     ax.grid(axis="both", color="#dddddd", linewidth=0.5, zorder=0)
     colorbar = fig.colorbar(scatter, ax=ax, pad=0.02)
     colorbar.set_label("Mean log1p-normalized marker score")
