@@ -37,7 +37,19 @@ def download_data(data_dir: Path) -> Path:
             destination = (data_dir / member.name).resolve()
             if root not in destination.parents and destination != root:
                 raise ValueError(f"Unsafe archive path: {member.name}")
-        tar.extractall(data_dir, filter="data")
+            if not (member.isdir() or member.isfile()):
+                raise ValueError(f"Unsupported archive member type: {member.name}")
+        for member in tar.getmembers():
+            destination = (data_dir / member.name).resolve()
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                if source is None:
+                    raise OSError(f"Unable to read archive member: {member.name}")
+                with source, destination.open("wb") as target:
+                    target.write(source.read())
     if not (matrix_dir / "matrix.mtx").exists():
         raise FileNotFoundError(f"Expected matrix not found under {matrix_dir}")
     return matrix_dir
