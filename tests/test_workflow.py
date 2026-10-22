@@ -77,3 +77,39 @@ def test_cluster_marker_score_summary_requires_marker_evidence_columns():
 
     with pytest.raises(ValueError, match="Missing per-cell marker evidence"):
         cluster_marker_score_summary(pd.DataFrame({"leiden": ["0"], "score_B cell": [0.5]}))
+
+
+def test_cluster_annotation_summary_includes_labels_and_ambiguous_counts():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_annotation_summary
+
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "0", "1", "1"],
+        "cell_type": ["B cell", "Ambiguous", "Ambiguous", "Unassigned", "Monocyte", "Monocyte"],
+        "confidence": ["High", "Low", "Low", "Unassigned", "Moderate", "High"],
+    })
+    result = cluster_annotation_summary(obs)
+
+    cluster0 = result[result["cluster"] == "0"]
+    ambiguous0 = cluster0[cluster0["cell_type"] == "Ambiguous"]
+    b_cell0 = cluster0[cluster0["cell_type"] == "B cell"].iloc[0]
+    assert len(cluster0) == 3
+    assert ambiguous0["cells"].tolist() == [2]
+    assert set(cluster0["ambiguous_cells"]) == {2}
+    assert set(cluster0["unassigned_cells"]) == {1}
+    assert set(cluster0["cluster_cells"]) == {4}
+    assert b_cell0["confidence"] == "High"
+    assert b_cell0["cells"] == 1
+
+    cluster1 = result[result["cluster"] == "1"]
+    assert len(cluster1) == 2  # Same cell type with different confidence labels stays distinguishable.
+    assert set(cluster1["ambiguous_cells"]) == {0}
+    assert set(cluster1["cluster_cells"]) == {2}
+
+
+def test_cluster_annotation_summary_requires_annotation_columns():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_annotation_summary
+
+    with pytest.raises(ValueError, match="missing required annotation columns"):
+        cluster_annotation_summary(pd.DataFrame({"leiden": ["0"]}))

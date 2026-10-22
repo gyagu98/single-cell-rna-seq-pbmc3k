@@ -203,6 +203,41 @@ def plot_cluster_marker_scores(summary, output_path: Path) -> None:
     plt.close(fig)
 
 
+def cluster_annotation_summary(obs):
+    """Count cell-type/confidence labels and ambiguity totals within each cluster."""
+    import pandas as pd
+
+    required = {"leiden", "cell_type", "confidence"}
+    missing = required.difference(obs.columns)
+    if missing:
+        raise ValueError(f"obs is missing required annotation columns: {', '.join(sorted(missing))}")
+
+    summary = (
+        obs.groupby(["leiden", "cell_type", "confidence"], observed=True, dropna=False)
+        .size()
+        .rename("cells")
+        .reset_index()
+        .rename(columns={"leiden": "cluster"})
+    )
+    cluster_sizes = obs.groupby("leiden", observed=True).size().rename("cluster_cells")
+    ambiguous_counts = (
+        obs.assign(_is_ambiguous=obs["cell_type"].astype(str).eq("Ambiguous"))
+        .groupby("leiden", observed=True)["_is_ambiguous"]
+        .sum()
+        .rename("ambiguous_cells")
+    )
+    unassigned_counts = (
+        obs.assign(_is_unassigned=obs["cell_type"].astype(str).eq("Unassigned"))
+        .groupby("leiden", observed=True)["_is_unassigned"]
+        .sum()
+        .rename("unassigned_cells")
+    )
+    cluster_totals = pd.concat([cluster_sizes, ambiguous_counts, unassigned_counts], axis=1)
+    summary = summary.merge(cluster_totals, left_on="cluster", right_index=True, validate="many_to_one")
+    summary["cluster"] = summary["cluster"].astype(str)
+    return summary
+
+
 def run(args: argparse.Namespace) -> None:
     # Heavy dependencies are imported only when executing the full analysis.
     import matplotlib.pyplot as plt
@@ -261,7 +296,7 @@ def run(args: argparse.Namespace) -> None:
     marker_score_summary = cluster_marker_score_summary(adata.obs)
     marker_score_summary.to_csv(out / "cluster_marker_scores.csv", index=False)
     plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png")
-    cluster_annotation = adata.obs.groupby(["leiden", "cell_type", "confidence"], observed=True).size().rename("cells").reset_index()
+    cluster_annotation = cluster_annotation_summary(adata.obs)
     cluster_annotation.to_csv(out / "cluster_celltype_summary.csv", index=False)
 
     sc.settings.figdir = out

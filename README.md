@@ -59,7 +59,7 @@ pbmc3k --input-dir path/to/filtered_gene_bc_matrices/hg19 --output-dir results
 - `cluster_markers.csv`: ranked marker statistics by cluster.
 - `cluster_cell_counts.csv`: number of cells assigned to each cluster.
 - `cell_annotations.csv`: per-cell broad cell-type annotation, confidence label, top-scoring candidate, top score, runner-up, score margin, and marker detection count.
-- `cluster_celltype_summary.csv`: counts by Leiden cluster, heuristic cell type, and confidence label.
+- `cluster_celltype_summary.csv`: counts by Leiden cluster, cell type, and confidence label, with cluster size plus explicit ambiguous- and unassigned-cell totals for context.
 - `marker_sets.csv`: marker genes, genes present in the dataset, and citation URL for each marker set.
 - `umap_annotation.png`: UMAP colored by cluster, heuristic annotation, and confidence.
 - `marker_score_dotplot.png`: per-cluster marker-score dot plot; color encodes mean log1p-normalized marker score and dot size encodes the fraction of cells with at least two detected genes in that marker set.
