@@ -1,0 +1,15 @@
+name: Paired single-cell analysis components
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  paired-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends r-base r-bioc-deseq2
+      - run: Rscript studies/kang_ifnb/test_pseudobulk.R
+      - run: Rscript studies/kang_ifnb/test_deseq2.R
