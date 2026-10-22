@@ -137,3 +137,73 @@ def test_cluster_marker_summary_includes_most_common_label_and_confidence():
     # The two labels tie by count; stable alphabetical tie-break chooses High.
     assert set(cluster1["assigned_cell_type"]) == {"Monocyte"}
     assert set(cluster1["assigned_confidence"]) == {"High"}
+
+
+def test_cluster_annotation_summary_calculates_ambiguity_warning():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_annotation_summary
+
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "0", "1", "1", "1", "1", "1"],
+        "cell_type": ["B cell", "Ambiguous", "Ambiguous", "Unassigned", "Monocyte", "Monocyte", "Monocyte", "Monocyte", "Ambiguous"],
+        "confidence": ["High", "Low", "Low", "Unassigned", "High", "High", "High", "High", "Low"],
+    })
+    result = cluster_annotation_summary(obs, ambiguity_threshold=0.20)
+
+    # Cluster 0: 3 of 4 cells ambiguous or unassigned (75.0%) -> True
+    cluster0 = result[result["cluster"] == "0"]
+    assert set(cluster0["pct_ambiguous_or_unassigned"]) == {75.0}
+    assert set(cluster0["high_ambiguity_warning"]) == {True}
+
+    # Cluster 1: 1 of 5 cells ambiguous (20.0%) -> True (threshold is >= 20%)
+    cluster1 = result[result["cluster"] == "1"]
+    assert set(cluster1["pct_ambiguous_or_unassigned"]) == {20.0}
+    assert set(cluster1["high_ambiguity_warning"]) == {True}
+
+
+def test_cluster_marker_score_summary_includes_ambiguity_metrics():
+    import pandas as pd
+    from pbmc3k_workflow.workflow import cluster_marker_score_summary, cluster_annotation_summary
+
+    obs = pd.DataFrame({
+        "leiden": ["0", "0", "0", "0", "1", "1", "1", "1", "1"],
+        "cell_type": ["B cell", "Ambiguous", "Ambiguous", "Unassigned", "Monocyte", "Monocyte", "Monocyte", "Monocyte", "Monocyte"],
+        "confidence": ["High", "Low", "Low", "Unassigned", "High", "High", "High", "High", "High"],
+        "score_B cell": [0.8, 0.2, 0.3, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+        "detected_B cell": [3, 1, 1, 0, 0, 0, 0, 0, 0],
+    })
+    annot = cluster_annotation_summary(obs, ambiguity_threshold=0.20)
+    result = cluster_marker_score_summary(obs, cluster_summary=annot)
+
+    c0 = result[result["cluster"] == "0"].iloc[0]
+    c1 = result[result["cluster"] == "1"].iloc[0]
+    assert c0["high_ambiguity_warning"] is True or c0["high_ambiguity_warning"] == 1
+    assert c0["pct_ambiguous_or_unassigned"] == pytest.approx(75.0)
+    assert c1["high_ambiguity_warning"] is False or c1["high_ambiguity_warning"] == 0
+    assert c1["pct_ambiguous_or_unassigned"] == pytest.approx(0.0)
+
+
+def test_plot_cluster_marker_scores_renders_with_ambiguity_warnings(tmp_path):
+    import pandas as pd
+    from pbmc3k_workflow.workflow import plot_cluster_marker_scores
+
+    summary = pd.DataFrame({
+        "cluster": ["0", "0", "1", "1"],
+        "cell_type": ["B cell", "Monocyte", "B cell", "Monocyte"],
+        "mean_marker_score": [0.8, 0.1, 0.2, 0.9],
+        "pct_cells_with_2plus_markers": [75.0, 10.0, 20.0, 85.0],
+        "assigned_cell_type": ["B cell", "B cell", "Monocyte", "Monocyte"],
+        "assigned_confidence": ["High", "High", "Low", "Low"],
+    })
+    cluster_summary = pd.DataFrame({
+        "cluster": ["0", "1"],
+        "cluster_cells": [10, 10],
+        "ambiguous_cells": [1, 4],
+        "unassigned_cells": [0, 1],
+        "pct_ambiguous_or_unassigned": [10.0, 50.0],
+        "high_ambiguity_warning": [False, True],
+    })
+    out_file = tmp_path / "marker_dotplot.png"
+    plot_cluster_marker_scores(summary, out_file, cluster_summary=cluster_summary)
+    assert out_file.exists()
+    assert out_file.stat().st_size > 1000

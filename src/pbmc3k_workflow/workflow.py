@@ -137,104 +137,7 @@ def score_marker_sets(adata, marker_sets: dict) -> tuple[dict[str, object], list
         })
     return {key: [row[key] for row in annotation_rows] for key in annotation_rows[0]}, audit_rows
 
-def cluster_marker_score_summary(obs):
-    """Summarize mean marker scores and marker detection by cluster and set."""
-    import pandas as pd
-
-    if "leiden" not in obs.columns:
-        raise ValueError("obs must contain Leiden cluster labels in 'leiden'")
-    score_columns = [column for column in obs.columns if str(column).startswith("score_")]
-    if not score_columns:
-        raise ValueError("obs must contain per-cell marker score columns")
-
-    rows = []
-    for cluster, group in obs.groupby("leiden", observed=True, sort=False):
-        for score_column in score_columns:
-            cell_type = str(score_column)[len("score_"):]
-            detected_column = f"detected_{cell_type}"
-            if detected_column not in group.columns:
-                raise ValueError(f"Missing per-cell marker evidence column: {detected_column}")
-            values = group[score_column].astype(float)
-            detected = group[detected_column].astype(int)
-            rows.append({
-                "cluster": str(cluster),
-                "cell_type": cell_type,
-                "mean_marker_score": float(values.mean()),
-                "pct_cells_with_2plus_markers": float((detected >= MIN_MARKERS_DETECTED).mean() * 100),
-                "cells_in_cluster": int(len(group)),
-            })
-    score_summary = pd.DataFrame(rows)
-    # The production workflow always has annotations. Keep this helper usable
-    # with score-only tables by adding labels only when both fields are present.
-    if {"cell_type", "confidence"}.issubset(obs.columns):
-        # A cluster can contain cells with different per-cell labels. For the
-        # plot, show the most common label/confidence pair; the complete
-        # breakdown remains in cluster_celltype_summary.csv.
-        label_counts = (
-            obs.groupby(["leiden", "cell_type", "confidence"], observed=True, dropna=False)
-            .size()
-            .rename("_label_cells")
-            .reset_index()
-            .sort_values(["leiden", "_label_cells", "cell_type", "confidence"],
-                         ascending=[True, False, True, True], kind="stable")
-            .drop_duplicates("leiden")
-            .rename(columns={"leiden": "cluster", "cell_type": "assigned_cell_type", "confidence": "assigned_confidence"})
-            [["cluster", "assigned_cell_type", "assigned_confidence"]]
-        )
-        score_summary = score_summary.merge(label_counts, on="cluster", how="left", validate="many_to_one")
-    return score_summary
-
-
-def plot_cluster_marker_scores(summary, output_path: Path) -> None:
-    """Draw a dot plot: color is mean score; size is fraction with >=2 markers."""
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    clusters = list(dict.fromkeys(summary["cluster"].astype(str)))
-    cell_types = list(dict.fromkeys(summary["cell_type"].astype(str)))
-    x_lookup = {name: index for index, name in enumerate(cell_types)}
-    y_lookup = {name: index for index, name in enumerate(clusters)}
-    x = summary["cell_type"].astype(str).map(x_lookup).to_numpy()
-    y = summary["cluster"].astype(str).map(y_lookup).to_numpy()
-    scores = summary["mean_marker_score"].astype(float).to_numpy()
-    fractions = summary["pct_cells_with_2plus_markers"].astype(float).to_numpy()
-
-    fig_width = max(9, len(cell_types) * 1.3)
-    fig_height = max(4, len(clusters) * 0.62 + 1.5)
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    scatter = ax.scatter(
-        x, y, c=scores, s=20 + fractions * 2.2, cmap="viridis",
-        edgecolors="#333333", linewidths=0.35, alpha=0.9,
-    )
-    ax.set_xticks(range(len(cell_types)), cell_types, rotation=35, ha="right")
-    if {"assigned_cell_type", "assigned_confidence"}.issubset(summary.columns):
-        cluster_labels = (
-            summary[["cluster", "assigned_cell_type", "assigned_confidence"]]
-            .drop_duplicates("cluster")
-            .set_index("cluster")
-        )
-        ytick_labels = [
-            f"{cluster} · {cluster_labels.loc[cluster, 'assigned_cell_type']} ({cluster_labels.loc[cluster, 'assigned_confidence']})"
-            for cluster in clusters
-        ]
-    else:
-        ytick_labels = clusters
-    ax.set_yticks(range(len(clusters)), ytick_labels)
-    ax.set_xlabel("Marker set / candidate cell type")
-    ax.set_ylabel("Leiden cluster · assigned cell type (confidence)")
-    ax.set_title("Per-cluster marker-score evidence and annotations")
-    ax.grid(axis="both", color="#dddddd", linewidth=0.5, zorder=0)
-    colorbar = fig.colorbar(scatter, ax=ax, pad=0.02)
-    colorbar.set_label("Mean log1p-normalized marker score")
-    for fraction in (25, 50, 75):
-        ax.scatter([], [], s=20 + fraction * 2.2, color="#aaaaaa", edgecolors="#333333", label=f"{fraction}%")
-    ax.legend(title="Cells with ≥2 markers", bbox_to_anchor=(1.18, 1), loc="upper left", frameon=False)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=180, bbox_inches="tight")
-    plt.close(fig)
-
-
-def cluster_annotation_summary(obs):
+def cluster_annotation_summary(obs, ambiguity_threshold: float = 0.20):
     """Count cell-type/confidence labels and ambiguity totals within each cluster."""
     import pandas as pd
 
@@ -264,9 +167,214 @@ def cluster_annotation_summary(obs):
         .rename("unassigned_cells")
     )
     cluster_totals = pd.concat([cluster_sizes, ambiguous_counts, unassigned_counts], axis=1)
+    cluster_totals["pct_ambiguous_or_unassigned"] = (
+        (cluster_totals["ambiguous_cells"] + cluster_totals["unassigned_cells"])
+        / cluster_totals["cluster_cells"]
+        * 100
+    ).round(1)
+    cluster_totals["high_ambiguity_warning"] = (
+        cluster_totals["pct_ambiguous_or_unassigned"] >= ambiguity_threshold * 100
+    )
     summary = summary.merge(cluster_totals, left_on="cluster", right_index=True, validate="many_to_one")
     summary["cluster"] = summary["cluster"].astype(str)
     return summary
+
+
+def cluster_marker_score_summary(obs, cluster_summary=None, ambiguity_threshold: float = 0.20):
+    """Summarize mean marker scores and marker detection by cluster and set."""
+    import pandas as pd
+
+    if "leiden" not in obs.columns:
+        raise ValueError("obs must contain Leiden cluster labels in 'leiden'")
+    score_columns = [column for column in obs.columns if str(column).startswith("score_")]
+    if not score_columns:
+        raise ValueError("obs must contain per-cell marker score columns")
+
+    rows = []
+    for cluster, group in obs.groupby("leiden", observed=True, sort=False):
+        for score_column in score_columns:
+            cell_type = str(score_column)[len("score_"):]
+            detected_column = f"detected_{cell_type}"
+            if detected_column not in group.columns:
+                raise ValueError(f"Missing per-cell marker evidence column: {detected_column}")
+            values = group[score_column].astype(float)
+            detected = group[detected_column].astype(int)
+            rows.append({
+                "cluster": str(cluster),
+                "cell_type": cell_type,
+                "mean_marker_score": float(values.mean()),
+                "pct_cells_with_2plus_markers": float((detected >= MIN_MARKERS_DETECTED).mean() * 100),
+                "cells_in_cluster": int(len(group)),
+            })
+    score_summary = pd.DataFrame(rows)
+
+    # Attach cluster-level assigned cell type and confidence if available
+    if {"cell_type", "confidence"}.issubset(obs.columns):
+        label_counts = (
+            obs.groupby(["leiden", "cell_type", "confidence"], observed=True, dropna=False)
+            .size()
+            .rename("_label_cells")
+            .reset_index()
+            .sort_values(["leiden", "_label_cells", "cell_type", "confidence"],
+                         ascending=[True, False, True, True], kind="stable")
+            .drop_duplicates("leiden")
+            .rename(columns={"leiden": "cluster", "cell_type": "assigned_cell_type", "confidence": "assigned_confidence"})
+            [["cluster", "assigned_cell_type", "assigned_confidence"]]
+        )
+        score_summary = score_summary.merge(label_counts, on="cluster", how="left", validate="many_to_one")
+
+    # Attach ambiguity metrics from cluster_summary if provided, or derive from obs
+    if cluster_summary is not None:
+        ambig_cols = ["cluster", "ambiguous_cells", "unassigned_cells", "pct_ambiguous_or_unassigned", "high_ambiguity_warning"]
+        available_cols = [c for c in ambig_cols if c in cluster_summary.columns]
+        if len(available_cols) > 1:
+            totals = cluster_summary[available_cols].drop_duplicates("cluster")
+            totals["cluster"] = totals["cluster"].astype(str)
+            score_summary = score_summary.merge(totals, on="cluster", how="left", validate="many_to_one")
+    elif {"cell_type", "confidence"}.issubset(obs.columns):
+        summary_data = cluster_annotation_summary(obs, ambiguity_threshold=ambiguity_threshold)
+        ambig_cols = ["cluster", "ambiguous_cells", "unassigned_cells", "pct_ambiguous_or_unassigned", "high_ambiguity_warning"]
+        totals = summary_data[ambig_cols].drop_duplicates("cluster")
+        totals["cluster"] = totals["cluster"].astype(str)
+        score_summary = score_summary.merge(totals, on="cluster", how="left", validate="many_to_one")
+
+    return score_summary
+
+
+def plot_cluster_marker_scores(summary, output_path: Path, cluster_summary=None, ambiguity_threshold: float = 0.20) -> None:
+    """Draw a dot plot with visual ambiguity warnings: color is mean score; size is fraction with >=2 markers."""
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    import numpy as np
+    import pandas as pd
+
+    clusters = list(dict.fromkeys(summary["cluster"].astype(str)))
+    cell_types = list(dict.fromkeys(summary["cell_type"].astype(str)))
+    x_lookup = {name: index for index, name in enumerate(cell_types)}
+    y_lookup = {name: index for index, name in enumerate(clusters)}
+    x = summary["cell_type"].astype(str).map(x_lookup).to_numpy()
+    y = summary["cluster"].astype(str).map(y_lookup).to_numpy()
+    scores = summary["mean_marker_score"].astype(float).to_numpy()
+    fractions = summary["pct_cells_with_2plus_markers"].astype(float).to_numpy()
+
+    # Determine ambiguity warning per cluster from cluster_summary or summary
+    ambiguity_data: dict[str, dict[str, object]] = {}
+    source_df = None
+    if cluster_summary is not None:
+        source_df = cluster_summary.copy()
+        if "cluster" in source_df.columns:
+            source_df["cluster"] = source_df["cluster"].astype(str)
+    elif "high_ambiguity_warning" in summary.columns or "pct_ambiguous_or_unassigned" in summary.columns:
+        source_df = summary.copy()
+
+    if source_df is not None:
+        for c in clusters:
+            subset = source_df[source_df["cluster"] == c]
+            if not subset.empty:
+                row = subset.iloc[0]
+                if "high_ambiguity_warning" in row:
+                    is_warn = bool(row["high_ambiguity_warning"])
+                elif "pct_ambiguous_or_unassigned" in row:
+                    is_warn = float(row["pct_ambiguous_or_unassigned"]) >= (ambiguity_threshold * 100)
+                elif "ambiguous_cells" in row and "cluster_cells" in row:
+                    total_ambig = float(row["ambiguous_cells"]) + float(row.get("unassigned_cells", 0))
+                    is_warn = (total_ambig / float(row["cluster_cells"])) >= ambiguity_threshold
+                else:
+                    is_warn = False
+
+                pct = float(row["pct_ambiguous_or_unassigned"]) if "pct_ambiguous_or_unassigned" in row else (
+                    round((float(row.get("ambiguous_cells", 0)) + float(row.get("unassigned_cells", 0))) / float(row["cluster_cells"]) * 100, 1)
+                    if "cluster_cells" in row and float(row["cluster_cells"]) > 0 else 0.0
+                )
+                ambig_cnt = int(row.get("ambiguous_cells", 0)) + int(row.get("unassigned_cells", 0))
+                ambiguity_data[c] = {"warning": is_warn, "pct": pct, "count": ambig_cnt}
+
+    fig_width = max(9.5, len(cell_types) * 1.35)
+    fig_height = max(4.5, len(clusters) * 0.65 + 1.8)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    # Visual warning: amber shaded row spans for high-ambiguity clusters
+    any_warning = False
+    for cluster in clusters:
+        info = ambiguity_data.get(cluster, {})
+        if info.get("warning"):
+            any_warning = True
+            y_idx = y_lookup[cluster]
+            ax.axhspan(
+                y_idx - 0.42, y_idx + 0.42,
+                facecolor="#fef3c7", edgecolor="#f59e0b",
+                linestyle="--", linewidth=1.0, alpha=0.55, zorder=1
+            )
+
+    scatter = ax.scatter(
+        x, y, c=scores, s=20 + fractions * 2.2, cmap="viridis",
+        edgecolors="#333333", linewidths=0.35, alpha=0.9, zorder=3,
+    )
+    ax.set_xticks(range(len(cell_types)), cell_types, rotation=35, ha="right")
+
+    # Build y-tick labels with assigned label, confidence, and warning flag
+    if {"assigned_cell_type", "assigned_confidence"}.issubset(summary.columns):
+        cluster_labels = (
+            summary[["cluster", "assigned_cell_type", "assigned_confidence"]]
+            .drop_duplicates("cluster")
+            .set_index("cluster")
+        )
+        ytick_labels = []
+        for cluster in clusters:
+            assigned = cluster_labels.loc[cluster, "assigned_cell_type"]
+            confidence = cluster_labels.loc[cluster, "assigned_confidence"]
+            base = f"{cluster} · {assigned} ({confidence})"
+            info = ambiguity_data.get(cluster, {})
+            if info.get("warning"):
+                pct = info["pct"]
+                ytick_labels.append(f"{base} [⚠️ {pct:.0f}% ambig/unassigned]")
+            else:
+                ytick_labels.append(base)
+    else:
+        ytick_labels = []
+        for cluster in clusters:
+            info = ambiguity_data.get(cluster, {})
+            if info.get("warning"):
+                pct = info["pct"]
+                ytick_labels.append(f"{cluster} [⚠️ {pct:.0f}% ambig/unassigned]")
+            else:
+                ytick_labels.append(cluster)
+
+    ax.set_yticks(range(len(clusters)), ytick_labels)
+    for tick, cluster in zip(ax.get_yticklabels(), clusters):
+        if ambiguity_data.get(cluster, {}).get("warning"):
+            tick.set_color("#92400e")
+            tick.set_fontweight("bold")
+
+    ax.set_xlabel("Marker set / candidate cell type")
+    ax.set_ylabel("Leiden cluster · assigned cell type (confidence)")
+    ax.set_title("Per-cluster marker-score evidence and annotations")
+    ax.grid(axis="both", color="#dddddd", linewidth=0.5, zorder=2)
+    colorbar = fig.colorbar(scatter, ax=ax, pad=0.02)
+    colorbar.set_label("Mean log1p-normalized marker score")
+
+    handles, legend_labels = [], []
+    for fraction in (25, 50, 75):
+        h = ax.scatter([], [], s=20 + fraction * 2.2, color="#aaaaaa", edgecolors="#333333", label=f"{fraction}%")
+        handles.append(h)
+        legend_labels.append(f"{fraction}%")
+
+    if any_warning:
+        h_warn = Patch(
+            facecolor="#fef3c7", edgecolor="#f59e0b", linestyle="--",
+            label=f"High ambiguity (≥{int(ambiguity_threshold*100)}%)"
+        )
+        handles.append(h_warn)
+        legend_labels.append(f"High ambiguity (≥{int(ambiguity_threshold*100)}%)")
+
+    ax.legend(
+        handles, legend_labels,
+        title="Cells with ≥2 markers / status",
+        bbox_to_anchor=(1.18, 1), loc="upper left", frameon=False
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -324,11 +432,11 @@ def run(args: argparse.Namespace) -> None:
     annotation_table = adata.obs[annotation_columns].copy()
     annotation_table.insert(0, "barcode", annotation_table.index.astype(str))
     annotation_table.to_csv(out / "cell_annotations.csv", index=False)
-    marker_score_summary = cluster_marker_score_summary(adata.obs)
-    marker_score_summary.to_csv(out / "cluster_marker_scores.csv", index=False)
-    plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png")
     cluster_annotation = cluster_annotation_summary(adata.obs)
     cluster_annotation.to_csv(out / "cluster_celltype_summary.csv", index=False)
+    marker_score_summary = cluster_marker_score_summary(adata.obs, cluster_summary=cluster_annotation)
+    marker_score_summary.to_csv(out / "cluster_marker_scores.csv", index=False)
+    plot_cluster_marker_scores(marker_score_summary, out / "marker_score_dotplot.png", cluster_summary=cluster_annotation)
 
     sc.settings.figdir = out
     sc.pl.umap(adata, color=["leiden", "cell_type", "confidence"], show=False, save="_annotation.png")
