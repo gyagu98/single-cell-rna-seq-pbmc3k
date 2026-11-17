@@ -13,3 +13,5 @@ jobs:
           sudo apt-get install -y --no-install-recommends r-base r-bioc-deseq2
       - run: Rscript studies/kang_ifnb/test_pseudobulk.R
       - run: Rscript studies/kang_ifnb/test_deseq2.R
+      - run: Rscript studies/kang_ifnb/test_pathway_enrichment.R
+      - run: Rscript studies/kang_ifnb/test_string_network.R

@@ -84,3 +84,22 @@ QC thresholds and clustering resolution affect the resulting cells and clusters;
 ## License and data
 
 The workflow code is released under the MIT License. The public matrix remains subject to its source dataset's terms; see the linked 10x Genomics dataset page. No donor-identifying information is included in this repository.
+
+---
+
+## Kang et al. (2018) Donor-Paired Interferon-Beta Study
+
+In addition to the baseline single-donor PBMC 3k analysis, this repository includes a complete multi-donor perturbation study investigating cell-type-specific responses to type I interferon ($\text{IFN-}\beta$) across human PBMCs ([Kang et al., *Nature Biotech* 2018](https://doi.org/10.1038/nbt.4042); NCBI GEO [GSE96583](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE96583)).
+
+### Key Study Modules & Findings
+
+1. **Donor-Paired Pseudobulk Modeling:**
+   Avoids single-cell pseudo-replication by summing UMI counts within donor-condition strata and testing treatment effect with paired negative binomial GLMs (`~ donor + condition`).
+2. **Cross-Lineage Response Spectrum:**
+   Myeloid cells (CD14+ Monocytes: 1,586 DEGs; FCGR3A+ Monocytes: 705 DEGs) mount the strongest transcriptional reprogramming with massive chemokine induction (*CXCL10*, *CXCL11*, *CCL8*), while lymphoid subsets (T cells, B cells, NK cells) show focused antiviral effector programs.
+3. **MSigDB Hallmark Pathway Enrichment (GSEA):**
+   Pre-ranked GSEA on Wald statistics confirms top enrichment for *Hallmark Interferon Alpha Response* (NES = +2.79, FDR $q = 0.000$), *Hallmark Interferon Gamma Response* (NES = +2.74, FDR $q = 0.000$), and *Inflammatory Response* (NES = +1.98).
+4. **STRING High-Confidence PPI Network:**
+   179 high-confidence interactions (score $\ge 0.700$) connecting 20 key antiviral effectors (*ISG15*, *IFIT1/2/3*, *MX1/2*, *OAS1/2/3*, *RSAD2*, *STAT1*, *IRF7*, *USP18*, *DDX58*, *EIF2AK2*, *BST2*), organized into functional complexes.
+
+See the dedicated [**Kang Study Documentation & Scientific Report**](studies/kang_ifnb/README.md) and [**Interactive HTML Report**](studies/kang_ifnb/results/kang_interferon_report.html) for full methodology and downloadable tables.

@@ -1,0 +1,21 @@
+gene,functional_cluster,degree,log2FoldChange,padj
+ISG15,ISGylation cascade,19,7.29,1.977310839651571e-55
+IFIT1,Viral RNA recognition (IFIT),19,8.05,2.2668374938697488e-49
+IFIT2,Viral RNA recognition (IFIT),18,8.04,3.697719807305702e-52
+IFIT3,Viral RNA recognition (IFIT),19,7.53,2.498401685566209e-70
+MX1,Dynamin-like GTPase antiviral trap,19,5.8,1.3723499919619278e-35
+MX2,Dynamin-like GTPase antiviral trap,19,4.78,7.453548529847724e-42
+OAS1,2'-5'-OAS / RNase L pathway,19,4.89,4.561788205485713e-45
+OAS2,2'-5'-OAS / RNase L pathway,19,4.85,2.46795021993836e-64
+OAS3,2'-5'-OAS / RNase L pathway,17,5.04,1.0402769798205332e-61
+RSAD2,Viperin nucleotide synthesis,19,7.55,7.259509301078484e-34
+STAT1,JAK-STAT transcription factor,19,2.28,1.3187296051935327e-39
+IRF7,Interferon regulatory factor,19,3.44,1.9203061079215432e-100
+CXCL10,Pro-inflammatory chemokine,13,8.85,2.82057265257253e-37
+USP18,ISGylation cascade,18,,
+DDX58,Cytosolic RIG-I RNA sensor,19,5.12,3.4895946807985786e-141
+EIF2AK2,PKR translation blockade,18,4.4,8.467917181957522e-90
+BST2,Viral tethering / release inhibitor,13,2.77,6.599235820592481e-65
+XAF1,XIAP-associated factor 1,18,3.84,1.3778426274563036e-43
+IFI44L,Antiviral GTPase feedback,17,5.4,8.610051407297779e-19
+HERC5,ISGylation cascade,17,6.14,2.089153023456015e-75

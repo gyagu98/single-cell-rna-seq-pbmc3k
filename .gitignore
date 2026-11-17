@@ -2,8 +2,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-data/
-results/
+*.egg-info/
+/data/
+/results/
 *.h5ad
 *.mtx
 *.tar.gz
+*.rds
+*.RData

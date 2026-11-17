@@ -1,0 +1,8 @@
+cell_type,n_donors,genes_tested,sig_degs_padj05_lfc1,upregulated_lfc1,downregulated_lfc1,ISG15_log2FC,IFIT1_log2FC,MX1_log2FC,OAS1_log2FC
+CD14+ Monocytes,8,5304,1586,905,681,7.29,8.05,5.8,4.89
+CD4 T cells,8,6885,446,343,103,4.92,6.66,4.78,5.05
+B cells,8,3721,405,314,91,5.56,6.53,4.89,4.52
+NK cells,7,2686,251,207,44,4.69,6.13,4.24,4.32
+CD8 T cells,7,2707,159,147,12,4.76,5.58,5.13,4.88
+FCGR3A+ Monocytes,8,3186,705,486,219,6.11,6.65,4.72,2.66
+Dendritic cells,5,1679,349,269,80,6.43,8.43,5.68,5.56
