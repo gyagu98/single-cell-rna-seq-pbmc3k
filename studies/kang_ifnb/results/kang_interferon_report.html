@@ -375,7 +375,20 @@
   </tbody>
 </table>
 
-  <h2>4. Provenance and Reproducibility</h2>
+  <h2>4. Provenance, Manifest & Reproducibility</h2>
+  <div style="background: #ebf8ff; border-left: 4px solid #3182ce; padding: 16px 20px; border-radius: 6px; margin: 18px 0 24px 0;">
+    <h3 style="margin-top: 0; color: #2b6cb0;">Machine-Readable Study Manifest (study_manifest.json)</h3>
+    <p style="margin-bottom: 12px;">A comprehensive, machine-readable study manifest is versioned at <a href="study_manifest.json" style="font-weight: bold; color: #2b6cb0;"><code>study_manifest.json</code></a>. It records full dataset provenance, exact computational dependencies, statistical parameters, random number generator seeds, and cryptographic SHA-256 checksums across all study outputs.</p>
+    <table style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; margin: 0;">
+      <tbody>
+        <tr><td style="width: 25%; font-weight: bold;">Primary Accession</td><td><a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE96583" target="_blank">NCBI GEO GSE96583</a> | Bioconductor ExperimentHub <code>EH2259</code> (<code>muscData::Kang18_8vs8</code>)</td></tr>
+        <tr><td style="font-weight: bold;">Biological Cohort</td><td>8 SLE patient donors, paired 6-hour recombinant IFN-&beta; vs. vehicle control (24,679 singlet cells, 35,635 genomic features)</td></tr>
+        <tr><td style="font-weight: bold;">Core Software & Versions</td><td>Python 3.11+, Scanpy &ge;1.10, PyDESeq2 0.4.11 / Bioconductor DESeq2 &ge;1.40, GSEApy 1.1.4, STRING API v12.0</td></tr>
+        <tr><td style="font-weight: bold;">Statistical Parameters</td><td>Paired GLM (<code>~ donor + condition</code>), Wald test, Benjamini-Hochberg FDR &lt; 0.05, |log<sub>2</sub>FC| &ge; 1.0, min 20 cells/stratum</td></tr>
+        <tr><td style="font-weight: bold;">Reproducibility Seeds</td><td>Fixed RNG seed <code>42</code> across Python, NumPy, GSEA permutations, and NetworkX layout</td></tr>
+      </tbody>
+    </table>
+  </div>
   <ul>
     <li><strong>Dataset Accession:</strong> GSE96583, Bioconductor ExperimentHub EH2259 (muscData::Kang18_8vs8).</li>
     <li><strong>Cell QC:</strong> Singlet cells retained (multiplets removed); genes filtered at count &ge; 10 in &ge; 3 pseudobulk samples.</li>

@@ -123,24 +123,45 @@ graph TD
 
 ---
 
-## 6. Reproducibility & Available Outputs
+## 6. Reproducibility, Manifest & Available Outputs
 
-All code and precomputed benchmark outputs are fully versioned in the repository:
+All code, configuration parameters, and precomputed benchmark outputs are fully versioned in the repository.
 
+### Machine-Readable Study Manifest (`study_manifest.json`)
+
+To ensure end-to-end provenance and computational reproducibility across heterogeneous environments, a machine-readable JSON manifest is versioned at [`results/study_manifest.json`](results/study_manifest.json) (mirrored to `results/manifest.json`).
+
+| Manifest Block | Recorded Metadata & Specifications |
+| :--- | :--- |
+| **Study & Accession** | Primary NCBI GEO accession **GSE96583**, Bioconductor ExperimentHub resource **EH2259** (`muscData::Kang18_8vs8`), organism (*Homo sapiens*, taxid 9606), 10x Chromium 3' platform, and primary citation (Kang et al. *Nat Biotech* 2018; PMID 29227470). |
+| **Cohort Definition** | 8 SLE patient donors (IDs: 101, 1015, 1016, 1039, 107, 1244, 1256, 1488), paired 6h recombinant IFN-$\beta$ (100 U/mL) vs. control, 24,679 filtered singlets, 35,635 genomic features across 7 lineages. |
+| **Package Versions** | Python environment (`scanpy >= 1.10`, `anndata >= 0.10`, `pydeseq2 0.4.11`, `gseapy 1.1.4`, `pandas`, `numpy`, `scipy`, `matplotlib`, `networkx`); R / Bioconductor environment (`R >= 4.3.0`, `DESeq2 >= 1.40.0`, `SingleCellExperiment`, `SummarizedExperiment`, `muscData`, `ExperimentHub`, `clusterProfiler`, `msigdbr`); External APIs (STRING Database API v12.0, MSigDB Hallmark 2020). |
+| **Analysis Parameters** | Pseudobulk sum aggregation, min 20 cells/donor/condition, min 3 complete pairs; Paired GLM (`~ donor + condition`), Wald test, Benjamini-Hochberg FDR $\alpha = 0.05$, $|\log_2\text{FC}| \ge 1.0$, gene filter $\ge 10$ counts in $\ge 3$ samples; Pre-ranked GSEA (weight $p=1.0$, size [15, 500], 1,000 permutations); STRING interaction score threshold $\ge 0.700$ (high confidence). |
+| **Random Seeds** | Explicit fixed RNG seeds (`42`) across Python `random`, NumPy `np.random`, GSEA permutation sampling, NetworkX graph layout, and test harness fixtures. |
+| **Output Artifacts** | Cryptographic SHA-256 hashes, file sizes, MIME formats, and functional descriptions for all 16 generated benchmark artifacts. |
+
+### Available Precomputed Benchmark Outputs
+
+- **Machine-Readable Manifest:** [`results/study_manifest.json`](results/study_manifest.json)
 - **Interactive HTML Report:** [`results/kang_interferon_report.html`](results/kang_interferon_report.html) (self-contained document with embedded high-resolution figures and metadata tables).
 - **DESeq2 Results per Cell Type:** [`results/deseq2_*.csv`](results/)
 - **Cross-Lineage Comparison:** [`results/celltype_response_summary.csv`](results/celltype_response_summary.csv)
 - **GSEA Hallmark Results:** [`results/hallmark_gsea_results.csv`](results/hallmark_gsea_results.csv)
 - **STRING Network Data:** [`results/string_network_edges.csv`](results/string_network_edges.csv) and [`results/string_network_nodes.csv`](results/string_network_nodes.csv)
+- **Visualizations:** [`results/gsea_hallmark_dotplot.png`](results/gsea_hallmark_dotplot.png), [`results/gsea_hallmark_dotplot.svg`](results/gsea_hallmark_dotplot.svg), [`results/string_network.png`](results/string_network.png), [`results/string_network.svg`](results/string_network.svg)
 
-### Running Verification Tests
+### Running Verification & Manifest Tests
 
 ```bash
+# Verify study manifest structure and SHA-256 artifact checksums
+python studies/kang_ifnb/run_pipeline.py --verify-manifest
+
+# Run complete Python pytest suite (including manifest schema & tamper detection)
+pytest -v
+
 # Run R test suite (pseudobulk, DESeq2 modeling, GSEA, STRING network)
 Rscript studies/kang_ifnb/test_pseudobulk.R
+Rscript studies/kang_ifnb/test_deseq2.R
 Rscript studies/kang_ifnb/test_pathway_enrichment.R
 Rscript studies/kang_ifnb/test_string_network.R
-
-# Run Python pytest suite
-pytest -q
 ```

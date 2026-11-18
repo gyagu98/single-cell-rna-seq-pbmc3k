@@ -1,0 +1,297 @@
+{
+  "manifest_version": "1.0.0",
+  "generated_at": "2026-11-18T17:23:00Z",
+  "study_metadata": {
+    "study_name": "Kang et al. (2018) PBMC Interferon-Beta Response Analysis",
+    "geo_accession": "GSE96583",
+    "bioconductor_experimenthub_id": "EH2259",
+    "bioconductor_package": "muscData::Kang18_8vs8",
+    "organism": "Homo sapiens",
+    "taxonomy_id": 9606,
+    "platform": "10x Genomics Chromium Single Cell 3'",
+    "reference_publication": {
+      "title": "Multiplexed droplet single-cell RNA-sequencing using natural genetic variation",
+      "authors": "Kang HM, Subramaniam M, Targ S, Nguyen M, Maliskova L, McCarthy E, Wan E, Wong S, Byrnes C, Lanata CM, Gate RE, Mostafavi S, Lum PY, Criswell LA, Raychaudhuri S, Ye CJ",
+      "journal": "Nature Biotechnology",
+      "volume": 36,
+      "pages": "89\u201394",
+      "year": 2018,
+      "doi": "10.1038/nbt.4042",
+      "pmid": "29227470"
+    },
+    "cohort": {
+      "description": "PBMC aliquots from 8 systemic lupus erythematosus (SLE) patient donors stimulated with recombinant IFN-beta or vehicle control",
+      "conditions": [
+        "ctrl",
+        "stim"
+      ],
+      "treatment": "Recombinant human IFN-beta (100 U/mL) for 6 hours",
+      "total_cells_sequenced": 29065,
+      "filtered_singlet_cells": 24679,
+      "total_features": 35635,
+      "donor_count": 8,
+      "donor_ids": [
+        "101",
+        "1015",
+        "1016",
+        "1039",
+        "107",
+        "1244",
+        "1256",
+        "1488"
+      ],
+      "evaluated_cell_types": [
+        "CD14+ Monocytes",
+        "FCGR3A+ Monocytes",
+        "CD4 T cells",
+        "B cells",
+        "Dendritic cells",
+        "NK cells",
+        "CD8 T cells"
+      ]
+    }
+  },
+  "package_versions": {
+    "python_environment": {
+      "python": ">=3.10",
+      "scanpy": ">=1.10,<2",
+      "anndata": ">=0.10,<1",
+      "pydeseq2": "0.4.11",
+      "gseapy": "1.1.4",
+      "pandas": ">=2.0.0",
+      "numpy": ">=1.24.0",
+      "scipy": ">=1.11.0",
+      "matplotlib": ">=3.8,<4",
+      "networkx": ">=3.2"
+    },
+    "r_bioconductor_environment": {
+      "r_base": ">=4.3.0",
+      "DESeq2": ">=1.40.0",
+      "SingleCellExperiment": ">=1.22.0",
+      "SummarizedExperiment": ">=1.30.0",
+      "ExperimentHub": ">=2.8.0",
+      "muscData": ">=1.14.0",
+      "clusterProfiler": ">=4.8.0",
+      "msigdbr": ">=7.5.1",
+      "Matrix": ">=1.6.0"
+    },
+    "external_databases": {
+      "string_db": {
+        "api_version": "12.0",
+        "api_url": "https://string-db.org/api/json/network",
+        "species": 9606,
+        "min_combined_score": 0.7
+      },
+      "msigdb": {
+        "collection": "MSigDB Hallmark Gene Sets (2020)",
+        "pathway_count": 50,
+        "source": "https://www.gsea-msigdb.org/gsea/msigdb"
+      }
+    }
+  },
+  "analysis_parameters": {
+    "pseudobulk_aggregation": {
+      "aggregation_function": "sum",
+      "cell_type_col": "cell",
+      "donor_col": "ind",
+      "condition_col": "stim",
+      "reference_condition": "ctrl",
+      "stimulated_condition": "stim",
+      "min_cells_per_donor_condition": 20,
+      "min_complete_donor_pairs": 3,
+      "multiplet_filter": "singlet_only"
+    },
+    "differential_expression": {
+      "statistical_framework": "Negative Binomial Generalized Linear Model (GLM)",
+      "design_formula": "~ donor + condition",
+      "contrast": [
+        "condition",
+        "stim",
+        "ctrl"
+      ],
+      "test_type": "Wald test",
+      "multiple_testing_correction": "Benjamini-Hochberg (BH) FDR",
+      "significance_threshold_padj": 0.05,
+      "significance_threshold_abs_log2fc": 1.0,
+      "gene_filter_min_counts": 10,
+      "gene_filter_min_samples": 3,
+      "primary_discovery_cell_type": "CD14+ Monocytes"
+    },
+    "pathway_enrichment": {
+      "algorithm": "Pre-ranked Gene Set Enrichment Analysis (GSEA)",
+      "ranking_metric": "Paired Wald test statistic (z-score) from CD14+ Monocytes",
+      "gene_set_database": "MSigDB Hallmark (50 pathways)",
+      "weight_parameter_p": 1.0,
+      "min_gene_set_size": 15,
+      "max_gene_set_size": 500,
+      "permutations": 1000
+    },
+    "protein_interaction_network": {
+      "source": "STRING Database v12.0",
+      "organism_taxid": 9606,
+      "score_threshold": 0.7,
+      "confidence_tier": "High confidence (>= 0.700)",
+      "effector_genes": [
+        "ISG15",
+        "IFIT1",
+        "IFIT2",
+        "IFIT3",
+        "MX1",
+        "MX2",
+        "OAS1",
+        "OAS2",
+        "OAS3",
+        "OASL",
+        "RSAD2",
+        "USP18",
+        "HERC5",
+        "BST2",
+        "DDX58",
+        "IFIH1",
+        "CXCL10",
+        "CXCL11",
+        "STAT1",
+        "EIF2AK2"
+      ],
+      "node_count": 20,
+      "edge_count": 179
+    }
+  },
+  "random_seeds": {
+    "python_random_seed": 42,
+    "numpy_random_seed": 42,
+    "gsea_permutation_seed": 42,
+    "network_graph_layout_seed": 42,
+    "test_harness_seed": 42
+  },
+  "output_files": {
+    "celltype_response_summary.csv": {
+      "file_name": "celltype_response_summary.csv",
+      "relative_path": "studies/kang_ifnb/results/celltype_response_summary.csv",
+      "format": "text/csv",
+      "size_bytes": 498,
+      "sha256": "dc37fd1c1dde692b44f9fdb955cb92b2a65f7046c418ed02a78950c49042bd10",
+      "description": "Cross-lineage summary table of complete donor pairs, genes tested, DEG counts, and canonical ISG log2 fold changes"
+    },
+    "deseq2_B_cells.csv": {
+      "file_name": "deseq2_B_cells.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_B_cells.csv",
+      "format": "text/csv",
+      "size_bytes": 491331,
+      "sha256": "43d265e0f991c362330dc6c03974e780e32a98cb87659dd7cb6aafc2ce1a12f5",
+      "description": "Differential expression Wald test statistics and p-values for B cells (~ donor + condition)"
+    },
+    "deseq2_CD14__Monocytes.csv": {
+      "file_name": "deseq2_CD14__Monocytes.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_CD14__Monocytes.csv",
+      "format": "text/csv",
+      "size_bytes": 751506,
+      "sha256": "4b87f88fa244cb1f1cfade8fe0134132e3cdc0d8a073e43307985579d1cee21a",
+      "description": "Differential expression Wald test statistics and p-values for CD14+ Monocytes (~ donor + condition)"
+    },
+    "deseq2_CD4_T_cells.csv": {
+      "file_name": "deseq2_CD4_T_cells.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_CD4_T_cells.csv",
+      "format": "text/csv",
+      "size_bytes": 938202,
+      "sha256": "17adda779d0e746d0f62d436f1f6be023aa7fb2669cfa9e921c74b8c87c18728",
+      "description": "Differential expression Wald test statistics and p-values for CD4 T cells (~ donor + condition)"
+    },
+    "deseq2_CD8_T_cells.csv": {
+      "file_name": "deseq2_CD8_T_cells.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_CD8_T_cells.csv",
+      "format": "text/csv",
+      "size_bytes": 366860,
+      "sha256": "d5245b5092c9b8261862f3b012637a9aa8c822278c76a488842f46b4863ce804",
+      "description": "Differential expression Wald test statistics and p-values for CD8 T cells (~ donor + condition)"
+    },
+    "deseq2_Dendritic_cells.csv": {
+      "file_name": "deseq2_Dendritic_cells.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_Dendritic_cells.csv",
+      "format": "text/csv",
+      "size_bytes": 235306,
+      "sha256": "64653512fdfc777fc94ace09e6c45b10a7812a084677243344dbda4feb381ea3",
+      "description": "Differential expression Wald test statistics and p-values for Dendritic cells (~ donor + condition)"
+    },
+    "deseq2_FCGR3A__Monocytes.csv": {
+      "file_name": "deseq2_FCGR3A__Monocytes.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_FCGR3A__Monocytes.csv",
+      "format": "text/csv",
+      "size_bytes": 455769,
+      "sha256": "e87b08995ac4c9142f76ee6d5787c4e24eeb200fed647039aa86f78d07a52e62",
+      "description": "Differential expression Wald test statistics and p-values for FCGR3A+ Monocytes (~ donor + condition)"
+    },
+    "deseq2_NK_cells.csv": {
+      "file_name": "deseq2_NK_cells.csv",
+      "relative_path": "studies/kang_ifnb/results/deseq2_NK_cells.csv",
+      "format": "text/csv",
+      "size_bytes": 356721,
+      "sha256": "28c46ff76f9b7e003e4f2f23c4255c21153881940cf88492322028c4718f9305",
+      "description": "Differential expression Wald test statistics and p-values for NK cells (~ donor + condition)"
+    },
+    "gsea_hallmark_dotplot.png": {
+      "file_name": "gsea_hallmark_dotplot.png",
+      "relative_path": "studies/kang_ifnb/results/gsea_hallmark_dotplot.png",
+      "format": "image/png",
+      "size_bytes": 164306,
+      "sha256": "1a4ddb5d59566df5165a0f2a06ce0c9fbac7671c7511df3461a43bb81505430c",
+      "description": "Raster visualization (PNG) of MSigDB Hallmark pathway enrichment in CD14+ Monocytes"
+    },
+    "gsea_hallmark_dotplot.svg": {
+      "file_name": "gsea_hallmark_dotplot.svg",
+      "relative_path": "studies/kang_ifnb/results/gsea_hallmark_dotplot.svg",
+      "format": "image/svg+xml",
+      "size_bytes": 90890,
+      "sha256": "8af2a9999cd0745831190db9228f6951c656a6f27590635968506462c223715a",
+      "description": "Vector graphic (SVG) of MSigDB Hallmark pathway enrichment in CD14+ Monocytes"
+    },
+    "hallmark_gsea_results.csv": {
+      "file_name": "hallmark_gsea_results.csv",
+      "relative_path": "studies/kang_ifnb/results/hallmark_gsea_results.csv",
+      "format": "text/csv",
+      "size_bytes": 12515,
+      "sha256": "f9a838908b39c37ba041a50f0665aa5d25e0f32b496610ae65939eb87c5dc514",
+      "description": "MSigDB Hallmark Gene Set Enrichment Analysis results (NES, nominal p, FDR q, leading edge genes)"
+    },
+    "kang_interferon_report.html": {
+      "file_name": "kang_interferon_report.html",
+      "relative_path": "studies/kang_ifnb/results/kang_interferon_report.html",
+      "format": "text/html",
+      "size_bytes": 1678832,
+      "sha256": "fd94d00d9b3562a625e735978b280cde916e5585eeb24721f506308505663f98",
+      "description": "Self-contained standalone HTML interactive study report with embedded figures and summary statistics"
+    },
+    "string_network.png": {
+      "file_name": "string_network.png",
+      "relative_path": "studies/kang_ifnb/results/string_network.png",
+      "format": "image/png",
+      "size_bytes": 1084661,
+      "sha256": "0c179f5f6f6243bed8a51536cd51a1793ebc6709b293df958ec52fa2b7ace04d",
+      "description": "High-resolution raster visualization (PNG) of the 20-node STRING protein-protein interaction network"
+    },
+    "string_network.svg": {
+      "file_name": "string_network.svg",
+      "relative_path": "studies/kang_ifnb/results/string_network.svg",
+      "format": "image/svg+xml",
+      "size_bytes": 149489,
+      "sha256": "6e46b6ab32fe702cca1247ea6d960efa6fe50d24aa12116252c320cb79525f30",
+      "description": "Scalable vector graphic (SVG) of the 20-node STRING protein-protein interaction network"
+    },
+    "string_network_edges.csv": {
+      "file_name": "string_network_edges.csv",
+      "relative_path": "studies/kang_ifnb/results/string_network_edges.csv",
+      "format": "text/csv",
+      "size_bytes": 8995,
+      "sha256": "15890f0607b2551ea1e9e57593ce2199c341974ad6ca09f771ddfe758008c344",
+      "description": "Deduplicated high-confidence STRING interaction edges (combined score >= 0.700)"
+    },
+    "string_network_nodes.csv": {
+      "file_name": "string_network_nodes.csv",
+      "relative_path": "studies/kang_ifnb/results/string_network_nodes.csv",
+      "format": "text/csv",
+      "size_bytes": 1296,
+      "sha256": "6dc55c4488e28a892fddb1fe91411243b8390e094c3c461db089f33b900fa721",
+      "description": "STRING network node degree and functional mechanistic annotations for top interferon effectors"
+    }
+  }
+}

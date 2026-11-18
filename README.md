@@ -102,4 +102,4 @@ In addition to the baseline single-donor PBMC 3k analysis, this repository inclu
 4. **STRING High-Confidence PPI Network:**
    179 high-confidence interactions (score $\ge 0.700$) connecting 20 key antiviral effectors (*ISG15*, *IFIT1/2/3*, *MX1/2*, *OAS1/2/3*, *RSAD2*, *STAT1*, *IRF7*, *USP18*, *DDX58*, *EIF2AK2*, *BST2*), organized into functional complexes.
 
-See the dedicated [**Kang Study Documentation & Scientific Report**](studies/kang_ifnb/README.md) and [**Interactive HTML Report**](studies/kang_ifnb/results/kang_interferon_report.html) for full methodology and downloadable tables.
+See the dedicated [**Kang Study Documentation & Scientific Report**](studies/kang_ifnb/README.md), [**Interactive HTML Report**](studies/kang_ifnb/results/kang_interferon_report.html), and machine-readable [**Study Manifest**](studies/kang_ifnb/results/study_manifest.json) for full dataset provenance, SHA-256 artifact checksums, parameter specifications, and downloadable tables.

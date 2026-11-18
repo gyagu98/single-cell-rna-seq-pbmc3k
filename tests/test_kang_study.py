@@ -1,3 +1,4 @@
+from pathlib import Path
 """Unit tests for the Kang 2018 paired pseudobulk, GSEA, and STRING network workflow."""
 
 import pytest
@@ -98,3 +99,106 @@ def test_parse_string_interactions_and_annotation():
     assert isg_cluster == "ISGylation cascade"
     ifit_cluster = annotated.loc[annotated["gene"] == "IFIT1", "functional_cluster"].iloc[0]
     assert ifit_cluster == "Viral RNA recognition (IFIT)"
+
+
+from pbmc3k_workflow.kang_study import (
+    build_study_manifest,
+    save_study_manifest,
+    verify_study_manifest,
+    compute_file_sha256,
+)
+
+
+def test_build_study_manifest_structure(tmp_path):
+    """Verify manifest structure, GEO accession, packages, parameters, seeds, and files."""
+    # Create mock result files in tmp_path
+    mock_csv = tmp_path / "mock_results.csv"
+    mock_csv.write_text("""gene,log2FoldChange,pvalue
+ISG15,7.29,1e-50
+""")
+
+    manifest = build_study_manifest(results_dir=tmp_path, timestamp="2026-11-18T17:23:00Z")
+
+    # Check top-level sections
+    assert manifest["manifest_version"] == "1.0.0"
+    assert manifest["generated_at"] == "2026-11-18T17:23:00Z"
+    assert "study_metadata" in manifest
+    assert "package_versions" in manifest
+    assert "analysis_parameters" in manifest
+    assert "random_seeds" in manifest
+    assert "output_files" in manifest
+
+    # Check GEO accession & publication metadata
+    study_meta = manifest["study_metadata"]
+    assert study_meta["geo_accession"] == "GSE96583"
+    assert study_meta["bioconductor_experimenthub_id"] == "EH2259"
+    assert study_meta["organism"] == "Homo sapiens"
+    assert study_meta["taxonomy_id"] == 9606
+    assert study_meta["reference_publication"]["pmid"] == "29227470"
+
+    # Check package versions
+    pkg_ver = manifest["package_versions"]
+    assert "python_environment" in pkg_ver
+    assert "r_bioconductor_environment" in pkg_ver
+    assert "external_databases" in pkg_ver
+    assert "pydeseq2" in pkg_ver["python_environment"]
+    assert "DESeq2" in pkg_ver["r_bioconductor_environment"]
+    assert pkg_ver["external_databases"]["string_db"]["api_version"] == "12.0"
+
+    # Check analysis parameters
+    params = manifest["analysis_parameters"]
+    assert params["pseudobulk_aggregation"]["min_cells_per_donor_condition"] == 20
+    assert params["differential_expression"]["design_formula"] == "~ donor + condition"
+    assert params["pathway_enrichment"]["gene_set_database"] == "MSigDB Hallmark (50 pathways)"
+    assert params["protein_interaction_network"]["score_threshold"] == 0.700
+
+    # Check random seeds
+    seeds = manifest["random_seeds"]
+    assert seeds["python_random_seed"] == 42
+    assert seeds["numpy_random_seed"] == 42
+    assert seeds["gsea_permutation_seed"] == 42
+
+    # Check mock file in output_files
+    assert "mock_results.csv" in manifest["output_files"]
+    finfo = manifest["output_files"]["mock_results.csv"]
+    assert finfo["size_bytes"] == len(mock_csv.read_bytes())
+    assert finfo["sha256"] == compute_file_sha256(mock_csv)
+
+
+def test_verify_study_manifest_actual_artifacts():
+    """Verify the actual repository study_manifest.json against all produced artifacts."""
+    repo_results = Path("studies/kang_ifnb/results")
+    manifest_path = repo_results / "study_manifest.json"
+    assert manifest_path.exists(), "study_manifest.json must exist in results/"
+
+    is_valid, errors = verify_study_manifest(manifest_path, results_dir=repo_results)
+    assert is_valid, f"Manifest validation errors: {errors}"
+    assert len(errors) == 0
+
+
+def test_verify_study_manifest_tamper_detection(tmp_path):
+    """Verify that file size, hash mismatches, or missing sections are detected."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("original content")
+
+    manifest = build_study_manifest(results_dir=tmp_path)
+    manifest_path = tmp_path / "study_manifest.json"
+    save_study_manifest(manifest, manifest_path)
+
+    # Valid check
+    is_valid, errors = verify_study_manifest(manifest_path, results_dir=tmp_path)
+    assert is_valid
+    assert len(errors) == 0
+
+    # Tamper with file content
+    test_file.write_text("tampered content altered!")
+    is_valid, errors = verify_study_manifest(manifest_path, results_dir=tmp_path)
+    assert not is_valid
+    assert any("mismatch for test.txt" in err for err in errors)
+
+    # Missing section check
+    del manifest["random_seeds"]
+    save_study_manifest(manifest, manifest_path)
+    is_valid, errors = verify_study_manifest(manifest_path, results_dir=tmp_path)
+    assert not is_valid
+    assert any("random_seeds" in err for err in errors)
