@@ -11,6 +11,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends r-base r-bioc-deseq2
+      - name: Smoke-test documented full-run command
+        run: Rscript studies/kang_ifnb/run_study.R --help
       - run: Rscript studies/kang_ifnb/test_pseudobulk.R
       - run: Rscript studies/kang_ifnb/test_deseq2.R
       - run: Rscript studies/kang_ifnb/test_pathway_enrichment.R

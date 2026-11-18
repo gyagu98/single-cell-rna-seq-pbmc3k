@@ -150,6 +150,24 @@ To ensure end-to-end provenance and computational reproducibility across heterog
 - **STRING Network Data:** [`results/string_network_edges.csv`](results/string_network_edges.csv) and [`results/string_network_nodes.csv`](results/string_network_nodes.csv)
 - **Visualizations:** [`results/gsea_hallmark_dotplot.png`](results/gsea_hallmark_dotplot.png), [`results/gsea_hallmark_dotplot.svg`](results/gsea_hallmark_dotplot.svg), [`results/string_network.png`](results/string_network.png), [`results/string_network.svg`](results/string_network.svg)
 
+### One-command full rerun from the downloaded study data
+
+The complete runner rebuilds donor-paired pseudobulk tables and DESeq2 results for every eligible cell type, the cross-cell-type summary, Hallmark GSEA tables and plots, the STRING interaction tables and network figures, the self-contained HTML report, and a fresh manifest with hashes. The first run fetches `muscData::Kang18_8vs8()` through Bioconductor and saves a local RDS cache at `studies/kang_ifnb/data/Kang18_8vs8.rds`; later runs reuse that cache. STRING and MSigDB are external resources, so their current responses/versions are recorded rather than claimed to be immutable.
+
+Install the R prerequisites once in R 4.3+:
+
+```bash
+Rscript -e 'install.packages(c("BiocManager", "jsonlite", "digest", "base64enc", "msigdbr")); BiocManager::install(c("SummarizedExperiment", "SingleCellExperiment", "ExperimentHub", "muscData", "DESeq2", "clusterProfiler"), ask = FALSE, update = FALSE)'
+```
+
+From the repository root, rerun the full analysis with one command:
+
+```bash
+Rscript studies/kang_ifnb/run_study.R
+```
+
+To explicitly refresh the downloaded input, use `Rscript studies/kang_ifnb/run_study.R --refresh-data`. To keep generated files elsewhere, use `--output-dir PATH`; to store the downloaded dataset cache elsewhere, use `--cache-dir PATH`. Use `--help` for the options. This runner needs internet access for the first data fetch and the STRING API request; it saves the exact raw STRING response beside the network outputs. It does not use the precomputed result CSVs as analysis inputs.
+
 ### Running Verification & Manifest Tests
 
 ```bash

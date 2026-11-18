@@ -10,3 +10,6 @@ __pycache__/
 *.tar.gz
 *.rds
 *.RData
+
+# Cached Kang single-cell source object (downloaded by the full rerun command)
+studies/kang_ifnb/data/
